@@ -630,6 +630,108 @@ export function getJourneyReplayData(journey_id) {
 // ═══════════════════════════════════════════
 // TERRITORY STATS — for admin analytics
 // ═══════════════════════════════════════════
+
+// ═══════════════════════════════════════════
+// ANALYTICS — Weekly / Monthly / Yearly
+// ═══════════════════════════════════════════
+export function getAnalytics(manager_id=null, period='month', refDate=null) {
+  const db = getDB()
+  const ref = refDate ? new Date(refDate) : new Date()
+  const managers = manager_id
+    ? db.users.filter(u => u.id === manager_id)
+    : db.users.filter(u => u.role === 'Sales Manager' && u.is_active !== false)
+
+  // Build date range
+  let dateFrom, dateTo
+  if (period === 'week') {
+    const day = ref.getDay()
+    const mon = new Date(ref); mon.setDate(ref.getDate() - (day===0?6:day-1))
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
+    dateFrom = mon.toISOString().split('T')[0]
+    dateTo   = sun.toISOString().split('T')[0]
+  } else if (period === 'month') {
+    dateFrom = new Date(ref.getFullYear(), ref.getMonth(), 1).toISOString().split('T')[0]
+    dateTo   = new Date(ref.getFullYear(), ref.getMonth()+1, 0).toISOString().split('T')[0]
+  } else if (period === 'year') {
+    dateFrom = ref.getFullYear() + '-01-01'
+    dateTo   = ref.getFullYear() + '-12-31'
+  }
+
+  const allVisits = db.visits.filter(v => v.visit_date >= dateFrom && v.visit_date <= dateTo)
+  const allReports = (db.daily_sales_reports||[]).filter(r => r.date >= dateFrom && r.date <= dateTo)
+  const allProducts = (db.product_day||[]).filter(p => p.date >= dateFrom && p.date <= dateTo)
+
+  // Per-manager breakdown
+  const managerStats = managers.map(m => {
+    const visits   = allVisits.filter(v => v.visit_date >= dateFrom && v.visit_date <= dateTo && v.manager_id === m.id)
+    const reports  = allReports.filter(r => r.manager_id === m.id)
+    const products = allProducts.filter(p => p.manager_id === m.id)
+    const targets  = db.targets.filter(t => t.manager_id === m.id)
+
+    const totalSales   = reports.reduce((s,r) => s + (r.sales_achievement||0), 0)
+    const totalProfit  = reports.reduce((s,r) => s + (r.profit_achievement||0), 0)
+    const totalSalesTgt= reports.reduce((s,r) => s + (r.sales_target||0), 0)
+    const salesPct     = totalSalesTgt > 0 ? Math.round((totalSales/totalSalesTgt)*100) : 0
+
+    // Visit trend by day
+    const visitsByDay = {}
+    visits.forEach(v => { visitsByDay[v.visit_date] = (visitsByDay[v.visit_date]||0) + 1 })
+
+    // Product performance
+    const productMap = {}
+    products.forEach(p => {
+      const key = p.product_name || 'Unknown'
+      if (!productMap[key]) productMap[key] = { name:key, brand:p.brand, target_qty:0, achieved_qty:0, target_amt:0, achieved_amt:0, days:0 }
+      productMap[key].target_qty   += (p.target_qty||0)
+      productMap[key].achieved_qty += (p.achieved_qty||0)
+      productMap[key].target_amt   += (p.target_amount||0)
+      productMap[key].achieved_amt += (p.achieved_amount||0)
+      productMap[key].days++
+    })
+
+    return {
+      id: m.id, name: m.full_name, username: m.username, territory: m.territory,
+      visits: visits.length, reports: reports.length,
+      totalSales, totalProfit, totalSalesTgt, salesPct,
+      visitsByDay, productPerformance: Object.values(productMap).sort((a,b)=>b.achieved_amt-a.achieved_amt),
+      targets
+    }
+  })
+
+  // Summary totals
+  const totals = {
+    visits:     managerStats.reduce((s,m) => s+m.visits, 0),
+    sales:      managerStats.reduce((s,m) => s+m.totalSales, 0),
+    profit:     managerStats.reduce((s,m) => s+m.totalProfit, 0),
+    salesTgt:   managerStats.reduce((s,m) => s+m.totalSalesTgt, 0),
+    reports:    managerStats.reduce((s,m) => s+m.reports, 0),
+  }
+  totals.salesPct = totals.salesTgt > 0 ? Math.round((totals.sales/totals.salesTgt)*100) : 0
+
+  // Daily trend across all managers
+  const dailyTrend = {}
+  allVisits.forEach(v => { dailyTrend[v.visit_date] = (dailyTrend[v.visit_date]||0) + 1 })
+  const allDailySales = {}
+  allReports.forEach(r => { allDailySales[r.date] = (allDailySales[r.date]||0) + (r.sales_achievement||0) })
+
+  return { period, dateFrom, dateTo, managerStats, totals, dailyTrend, allDailySales }
+}
+
+// Production reset: keeps only admin, clears all transactional data
+export function productionReset() {
+  const db = getDB()
+  const admin = db.users.find(u => u.role === 'Admin')
+  const freshDB = {
+    ...db,
+    users: admin ? [admin] : [],
+    visits: [], targets: [], statusHistory: [],
+    journeys: [], journey_locations: [], daily_sales_reports: [],
+    product_day: [], recentCustomers: [], recentProducts: [], recentBrands: []
+  }
+  saveDB(freshDB)
+  return { success: true, message: 'Production reset complete. Admin account preserved.' }
+}
+
 export function getTerritoryStats() {
   const db = getDB()
   const today = new Date().toISOString().split('T')[0]

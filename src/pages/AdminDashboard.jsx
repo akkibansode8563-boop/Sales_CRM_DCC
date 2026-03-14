@@ -3,6 +3,7 @@ import useAuthStore from '../store/authStore'
 import dccLogo from '../assets/dcc-logo.png'
 import {
   getUsers, getUsersAdmin, createUser, updateUser, deleteUser, adminSetPassword,
+  getAnalytics, productionReset,
   getLiveStatus, bulkCreateTargets, getTargets,
   getDailySalesReports, getAllVisits, getProductDayEntries,
   getJourneyHistory, calcDistanceKm, calcTravelTime,
@@ -36,6 +37,7 @@ const NAV = [
   { id:'drilldown', ico:'🔍', lbl:'Manager Detail' },
   { id:'heatmap',   ico:'🔥', lbl:'Heatmap' },
   { id:'targets',   ico:'🎯', lbl:'Targets' },
+  { id:'analytics', ico:'📈', lbl:'Analytics' },
   { id:'users',     ico:'⚙️', lbl:'Users' },
 ]
 
@@ -60,6 +62,9 @@ export default function AdminDashboard() {
   const [drillDate,     setDrillDate]    = useState(new Date().toISOString().split('T')[0])
   const [filterDate,    setFilterDate]   = useState(new Date().toISOString().split('T')[0])
   const [sidebarOpen,   setSidebarOpen]  = useState(false)
+  const [analyticsPeriod, setAnalyticsPeriod] = useState('month')
+  const [analyticsDate,   setAnalyticsDate]   = useState(new Date().toISOString().split('T')[0])
+  const [analyticsData,   setAnalyticsData]   = useState(null)
 
   const initUF = { username:'',password:'',full_name:'',email:'',phone:'',territory:'',role:'Sales Manager' }
   const initTF = { visit_target:'',sales_target:'',month:new Date().getMonth()+1,year:new Date().getFullYear() }
@@ -75,6 +80,18 @@ export default function AdminDashboard() {
     setUsers(getUsersAdmin())
     setTerrStats(getTerritoryStats())
   }, [])
+  const loadAnalytics = useCallback((period, date) => {
+    setAnalyticsData(getAnalytics(null, period, date))
+  }, [])
+  useEffect(() => { loadAnalytics(analyticsPeriod, analyticsDate) }, [analyticsPeriod, analyticsDate, loadAnalytics])
+  const doProductionReset = () => {
+    if (!window.confirm('⚠️ PRODUCTION RESET\n\nThis will:\n• Delete ALL sales managers\n• Delete ALL visits, journeys, reports\n• Keep only the Admin account\n\nType YES in the next prompt to confirm.')) return
+    const confirm2 = window.prompt('Type YES to confirm production reset:')
+    if (confirm2 !== 'YES') return toastMsg('Reset cancelled', 'error')
+    productionReset()
+    reload()
+    toastMsg('✅ Production reset complete. All old data cleared.')
+  }
   useEffect(() => { reload() }, [reload])
 
   /* ── User CRUD ── */
@@ -868,15 +885,193 @@ export default function AdminDashboard() {
             </div>
           )}
 
+
+          {/* ════════════════════════════════════════
+              TAB: ANALYTICS
+              ════════════════════════════════════════ */}
+          {tab==='analytics' && (
+            <div>
+              {/* Controls */}
+              <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',marginBottom:20,background:'#fff',borderRadius:12,padding:'14px 18px',boxShadow:'0 1px 4px rgba(0,0,0,0.07)'}}>
+                <div style={{fontWeight:700,fontSize:'0.85rem',color:'#374151',marginRight:4}}>📈 Analytics</div>
+                {['week','month','year'].map(p=>(
+                  <button key={p} onClick={()=>setAnalyticsPeriod(p)}
+                    style={{padding:'6px 16px',borderRadius:8,border:'1.5px solid',fontWeight:600,fontSize:'0.82rem',cursor:'pointer',
+                      background:analyticsPeriod===p?'#2563eb':'#fff',
+                      color:analyticsPeriod===p?'#fff':'#6b7280',
+                      borderColor:analyticsPeriod===p?'#2563eb':'#e5e7eb'}}>
+                    {p.charAt(0).toUpperCase()+p.slice(1)}
+                  </button>
+                ))}
+                <input type="date" value={analyticsDate} onChange={e=>setAnalyticsDate(e.target.value)}
+                  style={{padding:'6px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:'0.82rem',color:'#374151'}}/>
+                {analyticsData && (
+                  <span style={{marginLeft:'auto',fontSize:'0.78rem',color:'#9ca3af'}}>
+                    {analyticsData.dateFrom} → {analyticsData.dateTo}
+                  </span>
+                )}
+              </div>
+
+              {analyticsData && (<>
+                {/* Summary KPIs */}
+                <div className="kpi-bar-4" style={{marginBottom:20}}>
+                  {[
+                    {ico:'📍',n:analyticsData.totals.visits,    l:'Total Visits',  bg:'#ECFDF5',tc:'#059669'},
+                    {ico:'💰',n:fmt(analyticsData.totals.sales), l:'Total Sales',   bg:'#EFF6FF',tc:'#2563EB'},
+                    {ico:'📈',n:fmt(analyticsData.totals.profit),l:'Total Profit',  bg:'#F5F3FF',tc:'#7C3AED'},
+                    {ico:'🎯',n:(analyticsData.totals.salesPct)+'%',l:'Sales Achievement',bg:'#FFFBEB',tc:'#D97706'},
+                  ].map((k,i)=>(
+                    <div key={i} className="akpi">
+                      <div className="akpi-top"><div className="akpi-ico" style={{background:k.bg}}>{k.ico}</div></div>
+                      <div className="akpi-val" style={{fontSize:'1.5rem'}}>{k.n}</div>
+                      <div className="akpi-lbl">{k.l}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Daily Visit Trend */}
+                <div className="panel" style={{marginBottom:18}}>
+                  <div className="panel-hdr"><div className="panel-title">📅 Daily Visit Trend</div></div>
+                  <div className="panel-body" style={{overflowX:'auto'}}>
+                    {Object.keys(analyticsData.dailyTrend).length === 0
+                      ? <div className="empty"><div className="empty-ico">📅</div><div className="empty-txt">No visits in this period.</div></div>
+                      : (
+                        <div style={{display:'flex',gap:4,alignItems:'flex-end',minHeight:80,padding:'8px 0',flexWrap:'wrap'}}>
+                          {Object.entries(analyticsData.dailyTrend).sort((a,b)=>a[0].localeCompare(b[0])).map(([date,count])=>{
+                            const max=Math.max(...Object.values(analyticsData.dailyTrend))
+                            const h=max>0?Math.max(12,Math.round((count/max)*80)):12
+                            return (
+                              <div key={date} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,minWidth:28}}>
+                                <span style={{fontSize:'0.6rem',color:'#2563eb',fontWeight:700}}>{count}</span>
+                                <div style={{width:20,height:h,background:'#2563eb',borderRadius:'4px 4px 0 0',opacity:0.85}}/>
+                                <span style={{fontSize:'0.55rem',color:'#9ca3af',transform:'rotate(-45deg)',transformOrigin:'top left',whiteSpace:'nowrap',marginTop:6}}>
+                                  {new Date(date).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    }
+                  </div>
+                </div>
+
+                {/* Daily Sales Trend */}
+                <div className="panel" style={{marginBottom:18}}>
+                  <div className="panel-hdr"><div className="panel-title">💰 Daily Sales Trend</div></div>
+                  <div className="panel-body" style={{overflowX:'auto'}}>
+                    {Object.keys(analyticsData.allDailySales).length === 0
+                      ? <div className="empty"><div className="empty-ico">💰</div><div className="empty-txt">No sales reports in this period.</div></div>
+                      : (
+                        <div style={{display:'flex',gap:4,alignItems:'flex-end',minHeight:80,padding:'8px 0',flexWrap:'wrap'}}>
+                          {Object.entries(analyticsData.allDailySales).sort((a,b)=>a[0].localeCompare(b[0])).map(([date,amt])=>{
+                            const max=Math.max(...Object.values(analyticsData.allDailySales))
+                            const h=max>0?Math.max(12,Math.round((amt/max)*80)):12
+                            return (
+                              <div key={date} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,minWidth:28}}>
+                                <span style={{fontSize:'0.55rem',color:'#059669',fontWeight:700'}}>₹{(amt/1000).toFixed(0)}k</span>
+                                <div style={{width:20,height:h,background:'#10b981',borderRadius:'4px 4px 0 0',opacity:0.85}}/>
+                                <span style={{fontSize:'0.55rem',color:'#9ca3af',transform:'rotate(-45deg)',transformOrigin:'top left',whiteSpace:'nowrap',marginTop:6}}>
+                                  {new Date(date).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    }
+                  </div>
+                </div>
+
+                {/* Per Manager Breakdown */}
+                <div className="panel" style={{marginBottom:18}}>
+                  <div className="panel-hdr">
+                    <div className="panel-title">👥 Manager Performance Breakdown</div>
+                    <span className="panel-count">{analyticsData.managerStats.length} managers</span>
+                  </div>
+                  <div className="panel-body" style={{overflowX:'auto'}}>
+                    {analyticsData.managerStats.length===0
+                      ? <div className="empty"><div className="empty-ico">👥</div><div className="empty-txt">No managers yet.</div></div>
+                      : (
+                        <table className="analytics-table">
+                          <thead className="at-head">
+                            <tr><th>Manager</th><th>Territory</th><th>Visits</th><th>Sales</th><th>Profit</th><th>Achievement</th><th>Reports</th></tr>
+                          </thead>
+                          <tbody className="at-body">
+                            {analyticsData.managerStats.sort((a,b)=>b.totalSales-a.totalSales).map((m,i)=>{
+                              const c=m.salesPct>=100?'#059669':m.salesPct>=75?'#2563EB':'#D97706'
+                              const bg=m.salesPct>=100?'#ECFDF5':m.salesPct>=75?'#EFF6FF':'#FFFBEB'
+                              return (
+                                <tr key={m.id}>
+                                  <td><div className="at-mgr"><div className="at-av" style={{background:AVATAR_COLORS[i%AVATAR_COLORS.length]}}>{m.name?.[0]}</div><div><div className="at-name">{m.name}</div><div className="at-sub">@{m.username}</div></div></div></td>
+                                  <td><span style={{fontSize:'0.78rem',color:'#6b7280'}}>{m.territory||'—'}</span></td>
+                                  <td><span className="at-mono">{m.visits}</span></td>
+                                  <td><span className="at-mono">{fmt(m.totalSales)}</span></td>
+                                  <td><span className="at-mono">{fmt(m.totalProfit)}</span></td>
+                                  <td>{m.salesPct>0?<span className="at-pct-badge" style={{background:bg,color:c}}>{m.salesPct}%</span>:<span style={{color:'#9CA3AF'}}>—</span>}</td>
+                                  <td><span className="at-mono">{m.reports}</span></td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      )
+                    }
+                  </div>
+                </div>
+
+                {/* Product Day Performance */}
+                <div className="panel">
+                  <div className="panel-hdr"><div className="panel-title">📦 Product Performance</div></div>
+                  <div className="panel-body" style={{overflowX:'auto'}}>
+                    {analyticsData.managerStats.every(m=>m.productPerformance.length===0)
+                      ? <div className="empty"><div className="empty-ico">📦</div><div className="empty-txt">No product entries in this period.</div></div>
+                      : (
+                        <table className="analytics-table">
+                          <thead className="at-head">
+                            <tr><th>Manager</th><th>Product</th><th>Brand</th><th>Days</th><th>Target Qty</th><th>Achieved Qty</th><th>Target Value</th><th>Achieved Value</th><th>Achievement</th></tr>
+                          </thead>
+                          <tbody className="at-body">
+                            {analyticsData.managerStats.flatMap(m =>
+                              m.productPerformance.map((p,i) => {
+                                const pct=p.target_qty>0?Math.round((p.achieved_qty/p.target_qty)*100):0
+                                const c=pct>=100?'#059669':pct>=75?'#2563EB':'#D97706'
+                                const bg=pct>=100?'#ECFDF5':pct>=75?'#EFF6FF':'#FFFBEB'
+                                return (
+                                  <tr key={m.id+'-'+i}>
+                                    <td><span style={{fontSize:'0.78rem',fontWeight:600}}>{m.name}</span></td>
+                                    <td><span className="at-name">{p.name}</span></td>
+                                    <td><span className="prod-brand-tag">{p.brand||'—'}</span></td>
+                                    <td><span className="at-mono">{p.days}</span></td>
+                                    <td><span className="at-mono">{p.target_qty}</span></td>
+                                    <td><span className="at-mono">{p.achieved_qty}</span></td>
+                                    <td><span className="at-mono">{fmt(p.target_amt)}</span></td>
+                                    <td><span className="at-mono" style={{color:'#2563EB',fontWeight:700}}>{fmt(p.achieved_amt)}</span></td>
+                                    <td>{pct>0?<span className="at-pct-badge" style={{background:bg,color:c}}>{pct}%</span>:<span style={{color:'#9CA3AF'}}>—</span>}</td>
+                                  </tr>
+                                )
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      )
+                    }
+                  </div>
+                </div>
+              </>)}
+            </div>
+          )}
+
           {/* ════════════════════════════════════════
               TAB: USERS
-              ════════════════════════════════════════ */}
+              ════════════════════════════════════════ */
           {tab==='users' && (
             <div className="panel">
               <div className="panel-hdr">
                 <div className="panel-title">All Users</div>
-                <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
                   <span className="panel-count">{users.length} users</span>
+                  <button className="panel-action" onClick={doProductionReset} style={{color:'#ef4444',borderColor:'#fca5a5'}}>🗑️ Reset Data</button>
                   <button className="panel-action" onClick={()=>{setEditingUser(null);setUf(initUF);setUserModal(true)}}>+ New User</button>
                 </div>
               </div>
@@ -887,37 +1082,7 @@ export default function AdminDashboard() {
                     <div className="ur-info" style={{flex:1,minWidth:0}}>
                       <div className="ur-name">{u.full_name}</div>
                       <div className="ur-meta">@{u.username}{u.territory?` · ${u.territory}`:''}</div>
-                      {user?.role==='Admin' && (
-                        <div style={{display:'flex',alignItems:'center',gap:'6px',marginTop:'4px',flexWrap:'wrap'}}>
-                          <span style={{fontSize:'0.7rem',color:'#6b7280'}}>🔑</span>
-                          {u.plain_password ? (
-                            <code style={{background:'#eff6ff',padding:'2px 8px',borderRadius:'5px',color:'#1d4ed8',fontWeight:700,fontSize:'0.78rem',border:'1px solid #bfdbfe'}}>
-                              {u.plain_password}
-                            </code>
-                          ) : (
-                            <span style={{fontSize:'0.72rem',color:'#f59e0b',fontWeight:600}}>no password recorded</span>
-                          )}
-                          <button onClick={()=>setPwdEdit(p=>({...p,[u.id]:u.plain_password||''}))}
-                            style={{fontSize:'0.68rem',color:'#2563eb',background:'none',border:'none',cursor:'pointer',textDecoration:'underline',padding:0}}>
-                            {u.plain_password?'change':'set password'}
-                          </button>
-                          {pwdEdit[u.id]!==undefined && (
-                            <div style={{display:'flex',gap:'4px',alignItems:'center',width:'100%',marginTop:'4px'}}>
-                              <input type="text" value={pwdEdit[u.id]}
-                                onChange={e=>setPwdEdit(p=>({...p,[u.id]:e.target.value}))}
-                                onKeyDown={e=>e.key==='Enter'&&doAdminSetPwd(u.id,pwdEdit[u.id])}
-                                placeholder="New password (min 4 chars)"
-                                autoFocus
-                                style={{flex:1,padding:'4px 8px',border:'1px solid #93c5fd',borderRadius:'6px',fontSize:'0.8rem'}}
-                              />
-                              <button onClick={()=>doAdminSetPwd(u.id,pwdEdit[u.id])}
-                                style={{padding:'4px 10px',background:'#2563eb',color:'#fff',border:'none',borderRadius:'6px',cursor:'pointer',fontSize:'0.78rem',fontWeight:700}}>Save</button>
-                              <button onClick={()=>setPwdEdit(p=>{const n={...p};delete n[u.id];return n})}
-                                style={{padding:'4px 8px',background:'#f3f4f6',border:'none',borderRadius:'6px',cursor:'pointer',fontSize:'0.78rem'}}>✕</button>
-                            </div>
-                          )}
-                        </div>
-                      )}
+
                     </div>
                     <span className={`ur-badge ${u.role==='Admin'?'ur-badge-admin':'ur-badge-manager'}`}>{u.role==='Admin'?'Admin':'Manager'}</span>
                     <div className="ur-actions">
