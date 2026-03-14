@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#2563EB" />
+  <meta name="description" content="DCC SalesForce — Field Sales Automation with GPS tracking, visit logging and analytics" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="DCC SFA" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+  <title>DCC SalesForce</title>
+  <script>
+    // ── Cache buster v6 ──
+    // On every load: unregister ALL old SWs, clear ALL caches, then register fresh SW.
+    // This guarantees the browser always runs the latest JS bundle.
+    const APP_VERSION = 'v6';
+    const storedVersion = localStorage.getItem('app_sw_version');
+
+    if (storedVersion !== APP_VERSION) {
+      // Nuke every registered service worker
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(regs => {
+          regs.forEach(r => r.unregister());
+        });
+      }
+      // Nuke every cache entry
+      if ('caches' in window) {
+        caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+      }
+      localStorage.setItem('app_sw_version', APP_VERSION);
+      // Force reload to get fresh files (only once)
+      window.location.reload(true);
+    } else {
+      // Normal load: register SW
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(r => console.log('SW registered', r.scope))
+            .catch(e => console.log('SW failed', e));
+        });
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+</html>

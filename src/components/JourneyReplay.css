@@ -1,0 +1,62 @@
+.jr-overlay { position:fixed;inset:0;z-index:800;background:rgba(0,0,0,0.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:16px; }
+.jr-panel { background:#fff;border-radius:20px;width:100%;max-width:1080px;height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,0.25); }
+.jr-header { display:flex;align-items:flex-start;justify-content:space-between;padding:18px 22px 14px;border-bottom:1px solid var(--border);flex-shrink:0; }
+.jr-title { font-family:var(--font-display);font-size:1.1rem;font-weight:900;color:var(--text-1); }
+.jr-sub { font-size:0.68rem;color:var(--text-3);margin-top:2px; }
+.jr-close { background:#F3F4F6;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-2);font-size:0.85rem; }
+.jr-body { display:flex;flex:1;overflow:hidden; }
+.jr-sidebar { width:260px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto;padding:14px 12px;display:flex;flex-direction:column;gap:16px; }
+.jr-section { display:flex;flex-direction:column;gap:8px; }
+.jr-sec-lbl { font-size:0.6rem;font-weight:800;color:var(--text-4);text-transform:uppercase;letter-spacing:0.08em;padding:0 4px; }
+.jr-mgr-list, .jr-journey-list { display:flex;flex-direction:column;gap:4px; }
+.jr-mgr-btn, .jr-journey-btn { background:transparent;border:1.5px solid var(--border);border-radius:10px;padding:9px 11px;cursor:pointer;display:flex;align-items:center;gap:9px;text-align:left;transition:all 0.12s;font-family:var(--font); }
+.jr-mgr-btn:hover, .jr-journey-btn:hover { background:var(--surface-2); }
+.jr-mgr-active { border-color:var(--primary);background:#EFF6FF !important; }
+.jr-mgr-av { width:30px;height:30px;border-radius:8px;color:#fff;font-weight:800;font-size:0.78rem;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
+.jr-mgr-name { font-size:0.78rem;font-weight:700;color:var(--text-1); }
+.jr-mgr-terr { font-size:0.62rem;color:var(--text-3); }
+.jr-jrny-active { border-color:var(--primary);background:#EFF6FF !important; }
+.jr-jrny-date { font-size:0.78rem;font-weight:700;color:var(--text-1); }
+.jr-jrny-meta { font-size:0.62rem;color:var(--text-3);margin-top:2px; }
+.jr-flag-badge { background:#FEE2E2;color:#DC2626;font-size:0.6rem;font-weight:700;padding:2px 6px;border-radius:99px;margin-top:3px;display:inline-block; }
+.jr-empty { font-size:0.72rem;color:var(--text-4);text-align:center;padding:20px 10px; }
+.jr-timeline-section { flex:1;min-height:0; }
+.jr-timeline { display:flex;flex-direction:column;gap:2px;overflow-y:auto;max-height:220px; }
+.jr-tl-item { display:flex;gap:10px;padding:7px 8px;border-radius:8px;cursor:pointer;transition:background 0.1s; }
+.jr-tl-item:hover { background:var(--surface-2); }
+.jr-tl-dot { width:24px;height:24px;border-radius:50%;color:#fff;font-size:0.6rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px; }
+.jr-tl-body { flex:1;min-width:0; }
+.jr-tl-label { font-size:0.75rem;font-weight:700;color:var(--text-1); }
+.jr-tl-sub   { font-size:0.63rem;color:var(--text-3);margin-top:1px; }
+.jr-tl-time  { font-size:0.6rem;color:var(--text-4);font-family:var(--font-mono);margin-top:2px; }
+.jr-map-col { flex:1;display:flex;flex-direction:column;overflow:hidden; }
+.jr-controls { padding:12px 16px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px;flex-shrink:0;background:var(--surface-2); }
+.jr-ctrl-row { display:flex;align-items:center;gap:8px;flex-wrap:wrap; }
+.jr-ctrl-btn { background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:6px 12px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:var(--font);color:var(--text-2); }
+.jr-ctrl-btn:hover { background:var(--surface-2); }
+.jr-ctrl-play { background:var(--primary);color:#fff;border:none;border-radius:8px;padding:6px 16px;font-size:0.78rem;font-weight:800;cursor:pointer;font-family:var(--font); }
+.jr-ctrl-pause { background:#EF4444; }
+.jr-speed-wrap { display:flex;align-items:center;gap:5px;margin-left:auto;font-size:0.7rem;color:var(--text-3); }
+.jr-spd-btn { background:#fff;border:1.5px solid var(--border);border-radius:6px;padding:4px 8px;font-size:0.68rem;font-weight:700;cursor:pointer;font-family:var(--font);color:var(--text-2); }
+.jr-spd-active { background:var(--primary);color:#fff;border-color:var(--primary); }
+.jr-progress-bar { height:6px;background:#E5E7EB;border-radius:99px;overflow:hidden;position:relative; }
+.jr-progress-fill { height:100%;background:var(--primary);border-radius:99px;transition:width 0.2s; }
+.jr-progress-lbl { font-size:0.6rem;color:var(--text-4);margin-top:3px;display:block; }
+.jr-active-event { display:flex;align-items:center;gap:8px;border-radius:8px;padding:7px 12px;font-size:0.72rem;flex-wrap:wrap; }
+.jr-evt-sub  { color:var(--text-3);font-size:0.68rem; }
+.jr-evt-time { margin-left:auto;font-family:var(--font-mono);font-size:0.65rem;color:var(--text-4); }
+.jr-summary-row { display:flex;gap:10px; }
+.jr-sum-stat { background:#fff;border:1px solid var(--border);border-radius:8px;padding:6px 12px;text-align:center;flex:1; }
+.jr-sum-val  { display:block;font-family:var(--font-mono);font-size:0.82rem;font-weight:700;color:var(--text-1); }
+.jr-sum-lbl  { display:block;font-size:0.55rem;color:var(--text-4);text-transform:uppercase;letter-spacing:0.05em;margin-top:1px; }
+.jr-map { flex:1;position:relative;min-height:200px; }
+.jr-map-placeholder { position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-4);gap:10px; }
+.jr-map-ph-ico { font-size:2.5rem;opacity:0.4; }
+.jr-map-ph-txt { font-size:0.82rem;font-weight:600;color:var(--text-4); }
+@media (max-width:700px) {
+  .jr-panel { border-radius:16px 16px 0 0;height:96vh;max-width:100%; }
+  .jr-body { flex-direction:column; }
+  .jr-sidebar { width:100%;height:160px;border-right:none;border-bottom:1px solid var(--border);flex-direction:row;gap:10px;padding:10px; }
+  .jr-section { min-width:150px; }
+  .jr-timeline-section { display:none; }
+}

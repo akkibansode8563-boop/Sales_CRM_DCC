@@ -1,0 +1,219 @@
+/* ═══════════════════════════════════════════
+   LOGIN — Clean enterprise light theme
+   ═══════════════════════════════════════════ */
+.login-root {
+  min-height: 100vh; display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  font-family: var(--font); background: var(--bg);
+}
+
+/* ── LEFT BRAND PANEL ── */
+.login-brand {
+  background: linear-gradient(145deg, #1E3A8A 0%, #1D4ED8 40%, #2563EB 75%, #1E40AF 100%);
+  display: flex; align-items: center; justify-content: center;
+  padding: 56px 64px; position: relative; overflow: hidden;
+}
+.login-brand::before {
+  content: ''; position: absolute; inset: 0;
+  background-image: linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 52px 52px;
+}
+.login-brand::after {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse 70% 55% at 30% 50%, rgba(96,165,250,0.2), transparent 65%),
+              radial-gradient(ellipse 45% 40% at 70% 80%, rgba(16,185,129,0.15), transparent 60%);
+  pointer-events: none;
+}
+.lb-inner { position: relative; z-index: 1; width: 100%; max-width: 460px; }
+
+.lb-logo { display: flex; align-items: center; gap: 14px; margin-bottom: 72px; animation: fadeUp 0.55s 0.1s var(--ease) both; }
+.lb-logo-mark {
+  width: 48px; height: 48px; background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.25); border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.5rem; backdrop-filter: blur(8px); flex-shrink: 0;
+  overflow: hidden; padding: 0;
+}
+.lb-logo-img { width: 100%; height: 100%; object-fit: cover; border-radius: 14px; display: block; }
+.lb-brand-name { font-family: var(--font-display); font-size: 1.25rem; font-weight: 900; color: #fff; letter-spacing: -0.01em; }
+.lb-brand-sub  { font-size: 0.66rem; color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 2px; font-weight: 600; }
+
+.lb-headline { font-family: var(--font-display); font-size: 3.2rem; font-weight: 900; line-height: 1.08; letter-spacing: -0.03em; color: #fff; margin-bottom: 18px; animation: fadeUp 0.55s 0.2s var(--ease) both; }
+.lb-headline span { color: #93C5FD; }
+.lb-sub { font-size: 1rem; color: rgba(255,255,255,0.65); line-height: 1.7; margin-bottom: 48px; animation: fadeUp 0.55s 0.3s var(--ease) both; }
+
+.lb-features { display: flex; flex-direction: column; gap: 13px; margin-bottom: 56px; animation: fadeUp 0.55s 0.38s var(--ease) both; }
+.lb-feat { display: flex; align-items: center; gap: 13px; color: rgba(255,255,255,0.8); font-size: 0.875rem; font-weight: 500; }
+.lb-feat-dot { width: 7px; height: 7px; border-radius: 50%; background: #34D399; flex-shrink: 0; box-shadow: 0 0 10px rgba(52,211,153,0.5); }
+
+.lb-stats {
+  display: flex; align-items: center; background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15); border-radius: var(--r-xl);
+  padding: 16px 22px; animation: fadeUp 0.55s 0.46s var(--ease) both; backdrop-filter: blur(8px);
+}
+.lb-stat { flex: 1; text-align: center; }
+.lb-stat-num { font-family: var(--font-display); font-size: 1.15rem; font-weight: 900; color: #fff; }
+.lb-stat-lbl { font-size: 0.62rem; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.07em; margin-top: 3px; font-weight: 600; }
+.lb-stat-div  { width: 1px; height: 32px; background: rgba(255,255,255,0.15); }
+
+/* ── RIGHT FORM PANEL ── */
+.login-form-panel {
+  display: flex; align-items: center; justify-content: center;
+  padding: 56px 64px; background: #fff;
+  border-left: 1px solid var(--border);
+}
+.lf-inner { width: 100%; max-width: 360px; }
+/* ── DCC Logo above Welcome Back ── */
+.lf-company-logo {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.lf-mobile-logo-only {
+  display: none;
+}
+.lf-company-logo-circle {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #CBD5E1;
+  box-shadow: 0 4px 16px rgba(37,99,235,0.12), 0 1px 3px rgba(0,0,0,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  overflow: hidden;
+}
+.lf-company-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.lf-eyebrow { font-size: 0.7rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--primary); margin-bottom: 9px; animation: fadeUp 0.4s 0.1s var(--ease) both; }
+.lf-title   { font-family: var(--font-display); font-size: 1.9rem; font-weight: 900; color: var(--text-1); letter-spacing: -0.02em; margin-bottom: 6px; animation: fadeUp 0.4s 0.15s var(--ease) both; }
+.lf-desc    { font-size: 0.84rem; color: var(--text-3); margin-bottom: 32px; animation: fadeUp 0.4s 0.2s var(--ease) both; }
+
+.login-error {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--danger-light); border: 1px solid #FECACA;
+  border-radius: var(--r-md); padding: 11px 13px;
+  color: var(--danger); font-size: 0.8rem; font-weight: 600;
+  margin-bottom: 18px; animation: scaleIn 0.18s var(--ease);
+}
+
+.login-form { display: flex; flex-direction: column; gap: 14px; margin-bottom: 28px; animation: fadeUp 0.4s 0.25s var(--ease) both; }
+.lf-field { display: flex; flex-direction: column; gap: 6px; }
+.lf-label  { font-size: 0.7rem; font-weight: 800; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.lf-input-wrap {
+  position: relative; display: flex; align-items: center;
+  background: #fff; border: 1.5px solid var(--border);
+  border-radius: var(--r-md); transition: all var(--t-fast) var(--ease);
+}
+.lf-input-wrap:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+.lf-ico { position: absolute; left: 13px; color: var(--text-4); pointer-events: none; flex-shrink: 0; }
+.lf-input-wrap input {
+  flex: 1; background: transparent; border: none;
+  padding: 12px 13px 12px 40px;
+  font-size: 0.875rem; font-family: var(--font); color: var(--text-1);
+}
+.lf-input-wrap input::placeholder { color: var(--text-4); }
+.lf-toggle {
+  position: absolute; right: 11px; background: none; border: none;
+  color: var(--text-4); cursor: pointer; padding: 5px;
+  display: flex; align-items: center; border-radius: var(--r-xs);
+  transition: color var(--t-fast), background var(--t-fast);
+  transform: none !important; box-shadow: none !important;
+}
+.lf-toggle:hover { color: var(--text-2); background: var(--surface-3); }
+
+.login-cta {
+  width: 100%; padding: 14px; background: var(--primary); color: #fff;
+  border: none; border-radius: var(--r-md);
+  font-size: 0.9rem; font-weight: 800; font-family: var(--font);
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  box-shadow: var(--shadow-primary); transition: all var(--t-mid) var(--ease);
+  transform: none !important;
+}
+.login-cta:hover:not(:disabled) { background: var(--primary-dark); transform: translateY(-1px) !important; box-shadow: 0 8px 24px rgba(37,99,235,0.35); }
+.login-cta:disabled { opacity: 0.6; cursor: not-allowed; }
+.login-spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
+
+.demo-section { animation: fadeUp 0.4s 0.35s var(--ease) both; }
+.demo-label { font-size: 0.65rem; font-weight: 800; color: var(--text-4); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 9px; }
+.demo-list  { display: flex; flex-direction: column; gap: 6px; }
+.demo-card {
+  display: flex; align-items: center; gap: 11px;
+  background: var(--surface-2); border: 1.5px solid var(--border);
+  border-radius: var(--r-md); padding: 10px 13px;
+  cursor: pointer; text-align: left; font-family: var(--font);
+  transition: all var(--t-fast) var(--ease); transform: none !important; box-shadow: none !important;
+}
+.demo-card:hover { border-color: var(--primary); background: var(--primary-light); transform: translateX(4px) !important; }
+.demo-card-ico  { font-size: 1.15rem; flex-shrink: 0; }
+.demo-card-role { font-size: 0.76rem; font-weight: 800; color: var(--text-1); }
+.demo-card-user { font-size: 0.65rem; color: var(--text-3); font-family: var(--font-mono); margin-top: 1px; }
+.demo-card-arr  { margin-left: auto; color: var(--text-4); flex-shrink: 0; transition: all var(--t-fast); }
+.demo-card:hover .demo-card-arr { color: var(--primary); transform: translateX(3px); }
+
+.lf-footer { margin-top: 24px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 0.7rem; color: var(--text-4); animation: fadeUp 0.4s 0.45s var(--ease) both; }
+.lf-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+
+@media (max-width: 960px) {
+  .login-root { grid-template-columns: 1fr; }
+  .login-brand { display: none; }
+  .login-form-panel { padding: 40px 28px; min-height: 100vh; }
+}
+@media (max-width: 480px) {
+  .login-form-panel { padding: 32px 20px; }
+  .lf-title { font-size: 1.6rem; }
+}
+
+/* ── Mobile logo (shown only when brand panel is hidden) ── */
+.lf-mobile-logo {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 28px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #1E3A8A, #2563EB);
+  border-radius: var(--r-xl);
+}
+.lf-mobile-logo-mark {
+  width: 48px; height: 48px;
+  border-radius: 13px;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,0.3);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+.lf-mobile-logo-img {
+  width: 100%; height: 100%;
+  object-fit: cover; display: block;
+}
+.lf-mobile-brand-name {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+.lf-mobile-brand-sub {
+  font-size: 0.62rem;
+  color: rgba(255,255,255,0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  margin-top: 2px;
+  font-weight: 600;
+}
+
+@media (max-width: 960px) {
+  .lf-mobile-logo { display: flex; }
+  .lf-company-logo { display: none; }
+  .lf-mobile-logo-only { display: flex; justify-content: center; align-items: center; margin-bottom: 20px; }
+}
