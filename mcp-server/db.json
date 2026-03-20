@@ -1,0 +1,415 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "admin",
+      "password_hash": "e86f78a8a3caf0b60d8e74e5942aa6d86dc150cd3c03338aef25b7d2d7e3acc7",
+      "full_name": "System Administrator",
+      "role": "Admin",
+      "email": "admin@salescrm.com",
+      "created_at": "2026-02-06T07:34:54.256Z"
+    },
+    {
+      "id": 2,
+      "username": "john_doe",
+      "password_hash": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
+      "full_name": "John Doe",
+      "role": "Sales Manager",
+      "email": "john@salescrm.com",
+      "created_at": "2026-02-06T07:34:54.256Z"
+    },
+    {
+      "id": 3,
+      "username": "jane_smith",
+      "password_hash": "e8392925a98c9c22795d1fc5d0dfee5b9a6943f6b768ec5a2a0c077e5ed119cf",
+      "full_name": "Jane Smith",
+      "role": "Sales Manager",
+      "email": "jane@salescrm.com",
+      "created_at": "2026-02-06T07:34:54.256Z"
+    }
+  ],
+  "visits": [
+    {
+      "id": 1,
+      "manager_id": 2,
+      "client_name": "Tech Solutions Pvt Ltd",
+      "client_type": "Retailer",
+      "location": "Andheri West, Mumbai",
+      "latitude": 19.1136,
+      "longitude": 72.8697,
+      "visit_type": "Field Visit",
+      "notes": "Initial product demo completed",
+      "visit_date": "2026-02-06",
+      "created_at": "2026-02-06T04:00:00.256Z"
+    },
+    {
+      "id": 2,
+      "manager_id": 2,
+      "client_name": "Global Traders",
+      "client_type": "Distributor",
+      "location": "Bandra East, Mumbai",
+      "latitude": 19.0596,
+      "longitude": 72.8656,
+      "visit_type": "Field Visit",
+      "notes": "Discussed bulk order pricing",
+      "visit_date": "2026-02-06",
+      "created_at": "2026-02-06T05:45:00.256Z"
+    },
+    {
+      "id": 3,
+      "manager_id": 2,
+      "client_name": "Metro Wholesale",
+      "client_type": "Wholesaler",
+      "location": "Lower Parel, Mumbai",
+      "latitude": 19,
+      "longitude": 72.83,
+      "visit_type": "Field Visit",
+      "notes": "Quarterly review meeting",
+      "visit_date": "2026-02-06",
+      "created_at": "2026-02-06T08:30:00.256Z"
+    },
+    {
+      "id": 4,
+      "manager_id": 3,
+      "client_name": "Prime Distributors",
+      "client_type": "Distributor",
+      "location": "Powai, Mumbai",
+      "latitude": 19.1176,
+      "longitude": 72.906,
+      "visit_type": "Field Visit",
+      "notes": "New product launch discussion",
+      "visit_date": "2026-02-06",
+      "created_at": "2026-02-06T04:30:00.256Z"
+    },
+    {
+      "id": 5,
+      "manager_id": 2,
+      "client_name": "ASCX",
+      "client_type": "Distributor",
+      "location": "Andheri West, Mumbai",
+      "latitude": null,
+      "longitude": null,
+      "visit_type": "Field Visit",
+      "notes": "Order inquiry",
+      "visit_date": "2026-02-06",
+      "created_at": "2026-02-06T08:10:31.833Z"
+    },
+    {
+      "id": 6,
+      "manager_id": 2,
+      "client_name": "POONAM",
+      "client_type": "Distributor",
+      "location": "Guruwar Peth, Pune City, Pune District, Maharashtra, 411002, India",
+      "latitude": 18.51,
+      "longitude": 73.8567,
+      "visit_type": "Sales Visit",
+      "notes": "",
+      "visit_date": "2026-02-06",
+      "created_at": "2026-02-06T11:42:24.359Z"
+    },
+    {
+      "id": 7,
+      "manager_id": 2,
+      "client_name": "ABC",
+      "client_type": "Dealer",
+      "location": "Guruwar Peth, Pune City, Pune District, Maharashtra, 411002, India",
+      "latitude": 18.51,
+      "longitude": 73.8567,
+      "visit_type": "Sales Visit",
+      "notes": "asdkmkldmkamkkasmkakmsm",
+      "visit_date": "2026-02-06",
+      "created_at": "2026-02-06T12:06:51.189Z"
+    },
+    {
+      "id": 8,
+      "manager_id": 2,
+      "client_name": "ABC",
+      "client_type": "Distributor",
+      "location": "18.5173, 73.8438",
+      "latitude": 18.517329,
+      "longitude": 73.843809,
+      "visit_type": "Sales Visit",
+      "notes": "",
+      "visit_date": "2026-02-07",
+      "created_at": "2026-02-07T13:32:55.404Z"
+    }
+  ],
+  "targets": [
+    {
+      "id": 1,
+      "manager_id": 2,
+      "date": "2026-02-06",
+      "product": "Product A",
+      "target_quantity": 100,
+      "achieved": 45,
+      "created_at": "2026-02-06T07:34:54.256Z"
+    },
+    {
+      "id": 2,
+      "manager_id": 2,
+      "date": "2026-02-06",
+      "product": "Product B",
+      "target_quantity": 50,
+      "achieved": 30,
+      "created_at": "2026-02-06T07:34:54.256Z"
+    },
+    {
+      "id": 3,
+      "manager_id": 2,
+      "date": "2026-02-06",
+      "product": "Product C",
+      "target_quantity": 75,
+      "achieved": 65,
+      "created_at": "2026-02-06T07:34:54.256Z"
+    },
+    {
+      "id": 4,
+      "manager_id": 3,
+      "date": "2026-02-06",
+      "product": "Product A",
+      "target_quantity": 80,
+      "achieved": 55,
+      "created_at": "2026-02-06T07:34:54.256Z"
+    },
+    {
+      "id": 5,
+      "manager_id": 3,
+      "date": "2026-02-06",
+      "product": "Product B",
+      "target_quantity": 60,
+      "achieved": 40,
+      "created_at": "2026-02-06T07:34:54.256Z"
+    }
+  ],
+  "statusHistory": [
+    {
+      "id": 1,
+      "manager_id": 2,
+      "status": "Field",
+      "timestamp": "2026-02-06T07:46:38.534Z"
+    },
+    {
+      "id": 2,
+      "manager_id": 2,
+      "status": "In-Office",
+      "timestamp": "2026-02-06T07:46:39.744Z"
+    },
+    {
+      "id": 3,
+      "manager_id": 2,
+      "status": "Field",
+      "timestamp": "2026-02-06T07:46:40.844Z"
+    },
+    {
+      "id": 4,
+      "manager_id": 2,
+      "status": "In-Office",
+      "timestamp": "2026-02-06T07:46:41.775Z"
+    },
+    {
+      "id": 5,
+      "manager_id": 2,
+      "status": "Field",
+      "timestamp": "2026-02-06T07:46:42.439Z"
+    },
+    {
+      "id": 6,
+      "manager_id": 2,
+      "status": "In-Office",
+      "timestamp": "2026-02-06T07:46:42.837Z"
+    },
+    {
+      "id": 7,
+      "manager_id": 2,
+      "status": "Field",
+      "timestamp": "2026-02-06T07:46:43.230Z"
+    },
+    {
+      "id": 8,
+      "manager_id": 2,
+      "status": "In-Office",
+      "timestamp": "2026-02-06T07:46:43.612Z"
+    },
+    {
+      "id": 9,
+      "manager_id": 2,
+      "status": "Field",
+      "timestamp": "2026-02-06T12:05:46.546Z"
+    },
+    {
+      "id": 10,
+      "manager_id": 2,
+      "status": "In-Office",
+      "timestamp": "2026-02-06T12:05:47.133Z"
+    },
+    {
+      "id": 11,
+      "manager_id": 2,
+      "status": "Field Visit",
+      "timestamp": "2026-02-09T06:21:27.633Z"
+    },
+    {
+      "id": 12,
+      "manager_id": 2,
+      "status": "Field Visit",
+      "timestamp": "2026-02-09T06:21:28.432Z"
+    },
+    {
+      "id": 13,
+      "manager_id": 2,
+      "status": "In-Office",
+      "timestamp": "2026-02-09T06:21:28.849Z"
+    }
+  ],
+  "activityLogs": [],
+  "journeys": [
+    {
+      "id": 1,
+      "manager_id": 2,
+      "date": "2026-02-07",
+      "start_time": "2026-02-07T13:32:33.350Z",
+      "start_location": "18.5173, 73.8438",
+      "end_time": null,
+      "end_location": null,
+      "end_latitude": null,
+      "end_longitude": null,
+      "status": "active",
+      "total_visits": 0,
+      "created_at": "2026-02-07T13:32:33.350Z"
+    }
+  ],
+  "daily_sales_reports": [
+    {
+      "id": 1,
+      "manager_id": 2,
+      "date": "2026-02-06",
+      "sales_target": 100000,
+      "sales_achievement": 150000,
+      "profit_target": 25000,
+      "profit_achievement": 15000,
+      "profit_percentage": "10.00",
+      "created_at": "2026-02-06T10:32:33.049Z",
+      "updated_at": "2026-02-06T12:11:12.797Z"
+    }
+  ],
+  "brands": [
+    {
+      "id": 1,
+      "name": "Brand A"
+    },
+    {
+      "id": 2,
+      "name": "Brand B"
+    },
+    {
+      "id": 3,
+      "name": "Brand C"
+    }
+  ],
+  "products": [
+    {
+      "id": 1,
+      "brand_id": 1,
+      "name": "Product A1"
+    },
+    {
+      "id": 2,
+      "brand_id": 1,
+      "name": "Product A2"
+    },
+    {
+      "id": 3,
+      "brand_id": 2,
+      "name": "Product B1"
+    },
+    {
+      "id": 4,
+      "brand_id": 2,
+      "name": "Product B2"
+    },
+    {
+      "id": 5,
+      "brand_id": 3,
+      "name": "Product C1"
+    }
+  ],
+  "product_day": [
+    {
+      "id": 1,
+      "manager_id": 2,
+      "date": "2026-02-06",
+      "brand": "ZEBRONIC",
+      "product_name": "PRINTER",
+      "target_qty": 1000,
+      "achieved_qty": 1200,
+      "target_amount": 0,
+      "achieved_amount": 0,
+      "created_at": "2026-02-06T10:57:46.888Z",
+      "updated_at": "2026-02-06T10:58:48.160Z"
+    },
+    {
+      "id": 2,
+      "manager_id": 2,
+      "date": "2026-02-01",
+      "brand": "HP",
+      "product_name": "PRINTER",
+      "target_qty": 1500,
+      "achieved_qty": 0,
+      "target_amount": 0,
+      "achieved_amount": 0,
+      "created_at": "2026-02-06T11:03:32.919Z",
+      "updated_at": "2026-02-06T11:03:32.919Z"
+    },
+    {
+      "id": 3,
+      "manager_id": 2,
+      "date": "2026-02-02",
+      "brand": "HP",
+      "product_name": "PRINTER",
+      "target_qty": 100,
+      "achieved_qty": 0,
+      "target_amount": 0,
+      "achieved_amount": 0,
+      "created_at": "2026-02-06T11:03:58.525Z",
+      "updated_at": "2026-02-06T11:03:58.525Z"
+    },
+    {
+      "id": 4,
+      "manager_id": 2,
+      "date": "2026-02-06",
+      "brand": "HP",
+      "product_name": "PRINTER",
+      "target_qty": 2000,
+      "achieved_qty": 0,
+      "target_amount": 1000,
+      "achieved_amount": 0,
+      "created_at": "2026-02-06T11:11:32.040Z",
+      "updated_at": "2026-02-06T11:11:32.040Z"
+    },
+    {
+      "id": 5,
+      "manager_id": 2,
+      "date": "2026-02-06",
+      "brand": "HP",
+      "product_name": "PRINTER -  2601",
+      "target_qty": 15,
+      "achieved_qty": 0,
+      "target_amount": 0,
+      "achieved_amount": 0,
+      "created_at": "2026-02-06T12:12:40.797Z",
+      "updated_at": "2026-02-06T12:12:40.797Z"
+    },
+    {
+      "id": 6,
+      "manager_id": 2,
+      "date": "2026-02-07",
+      "product_name": "ZEBRONIC ",
+      "target_qty": 10000,
+      "achieved_qty": 15000,
+      "target_amount": 0,
+      "achieved_amount": 0,
+      "created_at": "2026-02-07T13:34:20.913Z",
+      "updated_at": "2026-02-07T13:34:20.913Z"
+    }
+  ]
+}
