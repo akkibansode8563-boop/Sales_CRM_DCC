@@ -3,7 +3,11 @@
 // Color-coded territory dots, visit clusters, manager filters
 // -----------------------------------------------------------
 import { useEffect, useRef, useState } from 'react'
-import { getHeatmapData, getUsers, getTerritoryStats } from '../utils/supabaseDB'
+import {
+  getUsersSync         as getUsers,
+  getHeatmapDataSync   as getHeatmapData,
+  getTerritoryStatsSync as getTerritoryStats
+} from '../utils/supabaseDB'
 import './SalesHeatmap.css'
 
 let L = null

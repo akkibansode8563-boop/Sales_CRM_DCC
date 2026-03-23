@@ -4,7 +4,7 @@
 // territory assignment, full form with validation
 // -----------------------------------------------------------
 import { useState, useEffect } from 'react'
-import { createCustomer, getTerritories } from '../utils/supabaseDB'
+import { createCustomerSync as createCustomer, getTerritories } from '../utils/supabaseDB'
 import './AddCustomerModal.css'
 
 const CLIENT_TYPES = ['Retailer','Distributor','Wholesaler','Dealer','Direct Customer','Other']

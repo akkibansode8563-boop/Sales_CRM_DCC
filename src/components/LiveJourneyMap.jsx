@@ -4,7 +4,10 @@
 //           idle detection, fake GPS flags, journey replay
 // -----------------------------------------------------------
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { addJourneyLocation, getJourneyLocations, getIdleStatus, calcDistanceKm, calcTravelTime } from '../utils/supabaseDB'
+import {
+  addJourneyLocation, getIdleStatus, calcDistanceKm, calcTravelTime,
+  getJourneyLocationsSync as getJourneyLocations
+} from '../utils/supabaseDB'
 import './LiveJourneyMap.css'
 
 let L = null

@@ -1,15 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import useAuthStore from '../store/authStore'
 import {
-    getCurrentStatus, updateStatus, createVisit,
-    startJourney, endJourney,
-    saveDailySalesReport,
-    createProductDayEntry, updateProductDayEntry, deleteProductDayEntry,
     calcDistanceKm, calcTravelTime,
-    searchCustomers, getRecentCustomers, createCustomer, getTerritories,
-    searchBrands,    getRecentBrands,    createBrand,
-    searchProducts,  getRecentProducts,  createProduct,
+    searchCustomers, getRecentCustomers, getTerritories,
+    searchBrands,    getRecentBrands,
+    searchProducts,  getRecentProducts,
     getAISuggestions, detectNearbyCustomers, getOfflineQueue, flushOfflineQueue,
+    addJourneyLocation,
     getAllVisitsSync        as getAllVisits,
     getDailyReportsSync    as getDailySalesReports,
     getProductEntriesSync  as getProductDayEntries,
@@ -17,7 +14,18 @@ import {
     getActiveJourneySync   as getActiveJourney,
     getTodayVisitsSync     as getTodayVisits,
     getCustomersSync       as getCustomers,
-    addJourneyLocation
+    updateStatusSync       as updateStatus,
+    createVisitSync        as createVisit,
+    startJourneySync       as startJourney,
+    endJourneySync         as endJourney,
+    saveDailySalesReportSync   as saveDailySalesReport,
+    createProductDayEntrySync  as createProductDayEntry,
+    updateProductDayEntrySync  as updateProductDayEntry,
+    deleteProductDayEntrySync  as deleteProductDayEntry,
+    createCustomerSync     as createCustomer,
+    createBrandSync        as createBrand,
+    createProductSync      as createProduct,
+    getCurrentStatus
   } from '../utils/supabaseDB'
 import JourneyMap from '../components/JourneyMap'
 import AutocompleteInput, {

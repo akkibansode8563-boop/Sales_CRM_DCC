@@ -4,7 +4,12 @@
 // idle detection and animated playback on Leaflet map
 // -----------------------------------------------------------
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { getJourneyReplayData, getJourneyHistory, getUsers, calcDistanceKm } from '../utils/supabaseDB'
+import {
+  calcDistanceKm,
+  getUsersSync          as getUsers,
+  getJourneyHistorySync as getJourneyHistory,
+  getJourneyReplayDataSync as getJourneyReplayData
+} from '../utils/supabaseDB'
 import './JourneyReplay.css'
 
 let L = null

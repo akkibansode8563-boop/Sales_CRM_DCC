@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { createCustomer, createBrand, createProduct } from '../utils/supabaseDB'
+import { createCustomerSync as createCustomer, createBrandSync as createBrand, createProduct } from '../utils/supabaseDB'
 import './AutocompleteInput.css'
 
 // -------------------------------------------------------------
