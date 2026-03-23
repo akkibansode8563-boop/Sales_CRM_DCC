@@ -32,6 +32,8 @@ import AutocompleteInput, {
   QuickAddCustomerModal, QuickAddBrandModal, QuickAddProductModal
 } from '../components/AutocompleteInput'
 import AddCustomerModal from '../components/AddCustomerModal'
+import MotivationalIntro from '../components/MotivationalIntro'
+import JourneyStartModal from '../components/JourneyStartModal'
 import dccLogo from '../assets/dcc-logo.png'
 import './ManagerDashboard.css'
 
@@ -107,6 +109,11 @@ export default function ManagerDashboard() {
   const [recordTimer, setRecordTimer]       = useState(null)
   // Notifications
   const [notifPerm, setNotifPerm]           = useState(Notification?.permission || 'default')
+
+  // Motivational intro — show once per session
+  const [showIntro, setShowIntro]           = useState(() => !sessionStorage.getItem('dcc_intro_shown'))
+  // Journey start modal
+  const [showJourneyModal, setShowJourneyModal] = useState(false)
 
   const today = new Date().toISOString().split('T')[0]
 
@@ -333,14 +340,24 @@ export default function ManagerDashboard() {
   const changeStatus = s => { updateStatus(user.id,s); setStatus(s); setShowStatusPicker(false); toastMsg(`Status → ${s}`) }
 
   /* -- Journey -- */
-  const handleStartJourney = async () => {
-    toastMsg('Getting your location…','info')
-    const c = await getGPS()
-    const loc = c ? await reverseGeo(c.latitude,c.longitude) : 'Starting Point'
+  const handleStartJourney = () => {
+    // Open the levelled-up journey mode selector modal
+    setShowJourneyModal(true)
+  }
+
+  /* Called by JourneyStartModal after user picks mode */
+  const handleJourneyLaunch = async (mode, gpsCoords) => {
+    setShowJourneyModal(false)
+    toastMsg('Starting journey…','info')
     try {
-      const j = startJourney(user.id,loc,c?.latitude,c?.longitude)
-      setJourney(j); changeStatus('On Field')
-      toastMsg('Journey started! 🚀'); setShowMap(true)
+      const loc = gpsCoords
+        ? await reverseGeo(gpsCoords.lat, gpsCoords.lng)
+        : 'Starting Point'
+      const j = startJourney(user.id, loc, gpsCoords?.lat, gpsCoords?.lng)
+      setJourney(j)
+      changeStatus(mode)
+      toastMsg(`${mode} journey started! 🚀`)
+      setShowMap(true)
     } catch(e) { toastMsg(e.message,'error') }
   }
   const handleEndJourney = async () => {
@@ -430,6 +447,16 @@ export default function ManagerDashboard() {
 
   return (
     <div className="mgr-app">
+      {/* ── Motivational Intro Screen (shown once per session) ── */}
+      {showIntro && (
+        <MotivationalIntro
+          user={user}
+          onComplete={() => {
+            sessionStorage.setItem('dcc_intro_shown','1')
+            setShowIntro(false)
+          }}
+        />
+      )}
 
       {/* -- Header -- */}
       <header className="mgr-header">
@@ -508,26 +535,51 @@ export default function ManagerDashboard() {
         {tab==='home' && (
           <div className="tab-pane">
 
-            {/* Journey Hero */}
-            <div className="journey-hero">
+            {/* Journey Hero — Enhanced */}
+            <div className={`journey-hero${journey?' journey-live':''}`}>
               <div className="jh-body">
                 <div className="jh-top-row">
-                  {journey
-                    ? <div className="jh-badge-active"><span className="jh-badge-dot"/>Live Journey Active</div>
-                    : <div className="jh-badge-idle">⭕ No Active Journey</div>
-                  }
+                  {journey ? (
+                    <div className="jh-badge-active">
+                      <span className="jh-badge-dot"/>
+                      Live · {sm.icon} {status}
+                    </div>
+                  ) : (
+                    <div className="jh-badge-idle">⭕ No Active Journey</div>
+                  )}
+                  {journey && (
+                    <div style={{fontSize:'0.65rem',color:'var(--text-3)',fontWeight:600,fontFamily:'var(--font-mono)'}}>
+                      {fmtTime(journey.start_time)} started
+                    </div>
+                  )}
                 </div>
-                <div className="jh-title">{journey?'Field Route Tracking':'Ready for Today?'}</div>
+
+                <div className="jh-title">
+                  {journey ? 'Field Route Tracking' : '🌅 Ready to Conquer Today?'}
+                </div>
                 <div className="jh-sub">
-                  {journey?`Started ${fmtTime(journey.start_time)} · ${journey.start_location?.split(',')[0]}`:'Start your journey to activate GPS tracking, route mapping and visit logging.'}
+                  {journey
+                    ? `📍 ${journey.start_location?.split(',')[0]} · ${calcElapsed(journey.start_time)} elapsed`
+                    : 'Tap below to begin — choose your mode and let GPS do the rest.'}
                 </div>
+
                 {journey && (
                   <div className="jh-metrics">
-                    <div className="jh-metric"><span className="jh-metric-val">{todayVisits.length}</span><span className="jh-metric-lbl">Stops</span></div>
-                    <div className="jh-metric"><span className="jh-metric-val">{journeyKm.toFixed(1)}</span><span className="jh-metric-lbl">km</span></div>
-                    <div className="jh-metric"><span className="jh-metric-val">{calcElapsed(journey.start_time)}</span><span className="jh-metric-lbl">Duration</span></div>
+                    <div className="jh-metric">
+                      <span className="jh-metric-val">{todayVisits.length}</span>
+                      <span className="jh-metric-lbl">Stops</span>
+                    </div>
+                    <div className="jh-metric">
+                      <span className="jh-metric-val">{journeyKm.toFixed(1)}</span>
+                      <span className="jh-metric-lbl">km</span>
+                    </div>
+                    <div className="jh-metric">
+                      <span className="jh-metric-val">{calcElapsed(journey.start_time)}</span>
+                      <span className="jh-metric-lbl">Duration</span>
+                    </div>
                   </div>
                 )}
+
                 <div className="jh-actions" style={{marginTop:14}}>
                   {journey ? (
                     <>
@@ -535,23 +587,21 @@ export default function ManagerDashboard() {
                       <button className="jh-btn-end" onClick={handleEndJourney}>🏁 End Journey</button>
                     </>
                   ) : (
-                    <div style={{display:'flex',flexDirection:'column',gap:8,width:'100%'}}>
-                      <button className="jh-btn-start" onClick={handleStartJourney} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><polygon points="3,1 13,7 3,13" fill="currentColor"/></svg>
-                        Start Field Journey
-                      </button>
-                      {status==='Work From Home' && (
-                        <button className="jh-btn-map" onClick={handleStartJourney}
-                          style={{background:'#f0fdf4',color:'#059669',border:'1.5px solid #86efac',borderRadius:10,padding:'11px 16px',
-                            fontWeight:700,fontSize:'0.83rem',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-                          &#x1F3E0; Start WFH Journey
-                        </button>
-                      )}
-                    </div>
+                    <button className="jh-btn-start" onClick={handleStartJourney}>
+                      <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                        <polygon points="2,1 12,6.5 2,12" fill="currentColor"/>
+                      </svg>
+                      Start Today's Journey
+                      <span className="jh-mode-badge">Choose Mode</span>
+                    </button>
                   )}
                 </div>
               </div>
-              {journey && <div className="jh-progress"><div className="jh-prog-fill" style={{width:`${visitPct}%`}}/></div>}
+              {journey && (
+                <div className="jh-progress">
+                  <div className="jh-prog-fill" style={{width:`${visitPct}%`}}/>
+                </div>
+              )}
             </div>
 
             {/* KPI Cards */}
@@ -1255,6 +1305,15 @@ export default function ManagerDashboard() {
       )}
 
       {/* ---- ADD CUSTOMER (GPS) MODAL ---- */}
+      {/* ── Journey Start Modal ── */}
+      {showJourneyModal && (
+        <JourneyStartModal
+          currentStatus={status}
+          onStart={handleJourneyLaunch}
+          onClose={() => setShowJourneyModal(false)}
+        />
+      )}
+
       {showAddCustomer && (
         <AddCustomerModal
           createdBy={user?.id}
