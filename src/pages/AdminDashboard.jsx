@@ -28,6 +28,7 @@ import AIInsights from '../components/dashboard/AIInsights'
 import CustomerIntelligence from '../components/dashboard/CustomerIntelligence'
 import ProductPerformance from '../components/dashboard/ProductPerformance'
 import LiveManagerMap from '../components/maps/LiveManagerMap'
+import LiveLocationMonitor from '../components/maps/LiveLocationMonitor'
 import { KPICard, SectionHeader, EmptyState, StatusBadge, Badge, ProgressBar } from '../components/ui/index'
 // merged into main supabaseDB import above
 import { startAutoSync, getQueueCount, onSyncStatusChange } from '../services/syncService'
@@ -1158,28 +1159,13 @@ useEffect(() => {
 
           {/* TAB: LIVE MAP */}
           {tab==='livemap' && (
-            <div>
-              <div className="panel">
-                <SectionHeader title="&#x1F5FA; Live Manager Map" count={managers.filter(m=>m.active_journey).length + ' active'} subtitle="Real-time GPS locations of field managers" actions={<button className="panel-action" onClick={reload}>Refresh</button>}/>
-                <LiveManagerMap managers={managers}/>
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:12,marginTop:16}}>
-                {managers.map((m,i) => (
-                  <div key={m.id} className="live-card" onClick={()=>openDrilldown(m)} style={{cursor:'pointer'}}>
-                    <div style={{display:'flex',alignItems:'center',gap:10}}>
-                      <div style={{width:36,height:36,borderRadius:10,background:AVATAR_COLORS[i%AVATAR_COLORS.length],color:'#fff',fontWeight:800,fontSize:'0.9rem',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{m.name?.[0]}</div>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontWeight:700,fontSize:'0.83rem',color:'#111827',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{m.name}</div>
-                        <StatusBadge status={m.status}/>
-                      </div>
-                    </div>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginTop:10}}>
-                      <div style={{background:'#F9FAFB',borderRadius:7,padding:'6px 8px',textAlign:'center'}}><div style={{fontWeight:700,fontSize:'0.85rem',color:'#111827'}}>{m.visits_today}</div><div style={{fontSize:'0.6rem',color:'#9CA3AF',fontWeight:600}}>VISITS</div></div>
-                      <div style={{background:'#F9FAFB',borderRadius:7,padding:'6px 8px',textAlign:'center'}}><div style={{fontWeight:700,fontSize:'0.75rem',color:'#2563EB'}}>{fmt(m.today_sales)}</div><div style={{fontSize:'0.6rem',color:'#9CA3AF',fontWeight:600}}>SALES</div></div>
-                    </div>
-                    {m.last_gps && <div style={{marginTop:8,fontSize:'0.67rem',color:'#9CA3AF'}}>&#x1F4CD; GPS updated {new Date(m.last_gps.time).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>}
-                  </div>
-                ))}
+            <div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 140px)',minHeight:600}}>
+              <div className="panel" style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',padding:0}}>
+                <LiveLocationMonitor
+                  managers={managers}
+                  salesManagers={salesManagers}
+                  onRefresh={reload}
+                />
               </div>
             </div>
           )}

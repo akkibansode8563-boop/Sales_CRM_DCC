@@ -16,7 +16,8 @@ import {
     getTargetsSync         as getTargets,
     getActiveJourneySync   as getActiveJourney,
     getTodayVisitsSync     as getTodayVisits,
-    getCustomersSync       as getCustomers
+    getCustomersSync       as getCustomers,
+    addJourneyLocation
   } from '../utils/supabaseDB'
 import JourneyMap from '../components/JourneyMap'
 import AutocompleteInput, {
@@ -230,6 +231,47 @@ export default function ManagerDashboard() {
     setTerritories(getTerritories())
     setOfflineQueue(getOfflineQueue())
   }, [user?.id])
+
+  /* ── Continuous GPS tracking while journey is active ──────────────────── */
+  useEffect(() => {
+    if (!journey?.id || !user?.id) return
+    if (!navigator.geolocation) return
+
+    let watchId = null
+    let lastLat = null, lastLng = null
+
+    const sendGPS = (lat, lng) => {
+      // Only update if moved more than ~10 meters
+      if (lastLat !== null) {
+        const dlat = Math.abs(lat - lastLat), dlng = Math.abs(lng - lastLng)
+        if (dlat < 0.0001 && dlng < 0.0001) return
+      }
+      lastLat = lat; lastLng = lng
+      try { addJourneyLocation(journey.id, user.id, lat, lng) } catch(e) {}
+    }
+
+    // Watch position continuously
+    watchId = navigator.geolocation.watchPosition(
+      pos => sendGPS(pos.coords.latitude, pos.coords.longitude),
+      err  => console.warn('GPS watch error:', err.message),
+      { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 }
+    )
+
+    // Also poll every 30s as fallback
+    const interval = setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        pos => sendGPS(pos.coords.latitude, pos.coords.longitude),
+        ()  => {},
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 20000 }
+      )
+    }, 30000)
+
+    return () => {
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId)
+      clearInterval(interval)
+    }
+  }, [journey?.id, user?.id])
+
 
   // Online/offline listener + auto-sync
   useEffect(() => {
