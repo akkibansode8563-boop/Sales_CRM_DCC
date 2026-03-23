@@ -17,29 +17,16 @@ const TERRITORIES = ['Mumbai West','Mumbai East','Mumbai Central','Pune City','P
 
 const INITIAL_DB = {
   users: [
-    { id:1, username:'admin',      password_hash:'e86f78a8a3caf0b60d8e74e5942aa6d86dc150cd3c03338aef25b7d2d7e3acc7', full_name:'System Administrator', role:'Admin',         email:'admin@dcc.com', phone:'', territory:'', is_active:true, created_at:'2026-01-01T00:00:00.000Z' },
-    { id:2, username:'john_doe',   password_hash:'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f',  full_name:'John Doe',             role:'Sales Manager', email:'john@dcc.com',  phone:'9876543210', territory:'Mumbai West', is_active:true, created_at:'2026-01-01T00:00:00.000Z' },
-    { id:3, username:'jane_smith', password_hash:'e8392925a98c9c22795d1fc5d0dfee5b9a6943f6b768ec5a2a0c077e5ed119cf', full_name:'Jane Smith',           role:'Sales Manager', email:'jane@dcc.com',  phone:'9876543211', territory:'Mumbai East', is_active:true, created_at:'2026-01-01T00:00:00.000Z' },
+    { id:1, username:'admin', password_hash:'e86f78a8a3caf0b60d8e74e5942aa6d86dc150cd3c03338aef25b7d2d7e3acc7', full_name:'System Administrator', role:'Admin', email:'admin@dcc.com', phone:'', territory:'', is_active:true, created_at:new Date().toISOString() },
   ],
   visits: [],
-  targets: [
-    { id:1, manager_id:2, visit_target:20, sales_target:100000, month:3, year:2026, created_at:'2026-03-01T00:00:00.000Z' },
-    { id:2, manager_id:3, visit_target:20, sales_target:80000,  month:3, year:2026, created_at:'2026-03-01T00:00:00.000Z' },
-  ],
-  statusHistory: [
-    { id:1, manager_id:2, status:'In-Office', timestamp:'2026-03-01T08:00:00.000Z' },
-    { id:2, manager_id:3, status:'In-Office', timestamp:'2026-03-01T08:00:00.000Z' },
-  ],
+  targets: [],
+  statusHistory: [],
   journeys: [],
   journey_locations: [],   // NEW: GPS trail per journey
   daily_sales_reports: [],
   product_day: [],
-  customers: [
-    { id:1, name:'ABC Distributors', owner_name:'Ramesh Shah',  type:'Distributor', address:'Andheri West, Mumbai', phone:'9000000001', territory:'Mumbai West', latitude:19.1383, longitude:72.8273, visit_count:0, last_visited:null, created_by:2, created_at:'2026-01-01T00:00:00.000Z' },
-    { id:2, name:'XYZ Traders',      owner_name:'Suresh Patel', type:'Retailer',    address:'Bandra, Mumbai',       phone:'9000000002', territory:'Mumbai West', latitude:19.0596, longitude:72.8295, visit_count:0, last_visited:null, created_by:2, created_at:'2026-01-01T00:00:00.000Z' },
-    { id:3, name:'PQR Wholesalers',  owner_name:'Amit Kumar',   type:'Wholesaler',  address:'Kurla, Mumbai',        phone:'9000000003', territory:'Mumbai East', latitude:19.0728, longitude:72.8826, visit_count:0, last_visited:null, created_by:3, created_at:'2026-01-01T00:00:00.000Z' },
-    { id:4, name:'MNO Infotech',     owner_name:'Priya Sharma', type:'Dealer',      address:'Thane, Mumbai',        phone:'9000000004', territory:'Mumbai East', latitude:19.2183, longitude:72.9781, visit_count:0, last_visited:null, created_by:3, created_at:'2026-01-01T00:00:00.000Z' },
-  ],
+  customers: [],
   brands: [
     { id:1, name:'Brand Alpha', created_at:'2026-01-01T00:00:00.000Z' },
     { id:2, name:'Brand Beta',  created_at:'2026-01-01T00:00:00.000Z' },

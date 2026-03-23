@@ -143,22 +143,12 @@
 .login-cta:disabled { opacity: 0.6; cursor: not-allowed; }
 .login-spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
 
-.demo-section { animation: fadeUp 0.4s 0.35s var(--ease) both; }
-.demo-label { font-size: 0.65rem; font-weight: 800; color: var(--text-4); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 9px; }
-.demo-list  { display: flex; flex-direction: column; gap: 6px; }
-.demo-card {
   display: flex; align-items: center; gap: 11px;
   background: var(--surface-2); border: 1.5px solid var(--border);
   border-radius: var(--r-md); padding: 10px 13px;
   cursor: pointer; text-align: left; font-family: var(--font);
   transition: all var(--t-fast) var(--ease); transform: none !important; box-shadow: none !important;
 }
-.demo-card:hover { border-color: var(--primary); background: var(--primary-light); transform: translateX(4px) !important; }
-.demo-card-ico  { font-size: 1.15rem; flex-shrink: 0; }
-.demo-card-role { font-size: 0.76rem; font-weight: 800; color: var(--text-1); }
-.demo-card-user { font-size: 0.65rem; color: var(--text-3); font-family: var(--font-mono); margin-top: 1px; }
-.demo-card-arr  { margin-left: auto; color: var(--text-4); flex-shrink: 0; transition: all var(--t-fast); }
-.demo-card:hover .demo-card-arr { color: var(--primary); transform: translateX(3px); }
 
 .lf-footer { margin-top: 24px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 0.7rem; color: var(--text-4); animation: fadeUp 0.4s 0.45s var(--ease) both; }
 .lf-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex-shrink: 0; }

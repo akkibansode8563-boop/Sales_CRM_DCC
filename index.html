@@ -4,22 +4,31 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#2563EB" />
-  <meta name="description" content="DCC SalesForce — Field Sales Automation with GPS tracking, visit logging and analytics" />
+  <meta name="description" content="DCC SalesForce — Field Sales Automation with GPS tracking, visit logging and real-time analytics" />
+  <meta name="keywords" content="sales CRM, field sales, GPS tracking, sales force automation" />
+  <meta name="author" content="DCC SalesForce" />
+
+  <!-- PWA -->
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="DCC SFA" />
+  <meta name="application-name" content="DCC SalesForce" />
+  <meta name="msapplication-TileColor" content="#2563EB" />
+
+  <!-- Icons -->
   <link rel="manifest" href="/manifest.json" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png" />
-  <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png" />
+
   <title>DCC SalesForce</title>
+
   <script>
-    // Cache buster v7 — forces all browsers to load fresh JS/CSS on each deploy
-    const APP_VERSION = 'v7';
+    // Cache buster v8 — forces fresh load on deploy
+    const APP_VERSION = 'v8';
     const stored = localStorage.getItem('app_sw_version');
     if (stored !== APP_VERSION) {
       if ('serviceWorker' in navigator) {
@@ -35,7 +44,7 @@
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js')
             .then(r => console.log('SW registered', r.scope))
-            .catch(e => console.log('SW failed', e));
+            .catch(e => console.warn('SW failed', e));
         });
       }
     }

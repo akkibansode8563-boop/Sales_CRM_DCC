@@ -3,22 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/authStore'
 import { authLogin } from '../utils/supabaseDB'
 import dccLogo from '../assets/dcc-logo.png'
-import companyLogo from '../assets/DCC_Logo_Back.png'
 import './Login.css'
-
-const DEMOS = [
-  { role: 'Admin',   username: 'admin',      password: 'Admin@123',   ico: '👑', tag: 'Full Access' },
-  { role: 'Manager', username: 'john_doe',   password: 'Manager@123', ico: '🧑‍💼', tag: 'Mumbai West' },
-  { role: 'Manager', username: 'jane_smith', password: 'Manager@123', ico: '👩‍💼', tag: 'Mumbai East' },
-]
 
 export default function Login() {
   const navigate = useNavigate()
   const { login } = useAuthStore()
-  const [form, setForm] = useState({ username: '', password: '' })
+  const [form, setForm]     = useState({ username: '', password: '' })
   const [showPwd, setShowPwd] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError]   = useState('')
 
   const handleSubmit = async e => {
     e.preventDefault()
@@ -52,7 +45,12 @@ export default function Login() {
           <p className="lb-sub">A complete field sales CRM with live GPS tracking, real-time team visibility, and analytics — built for high-performance teams.</p>
 
           <div className="lb-features">
-            {['Live GPS route mapping & journey tracking','Real-time manager status & field visibility','Daily sales & profit target analytics','Offline-ready PWA — works without internet'].map((f,i) => (
+            {[
+              'Live GPS route mapping & journey tracking',
+              'Real-time manager status & field visibility',
+              'Daily sales & profit target analytics',
+              'Offline-ready PWA — works without internet',
+            ].map((f, i) => (
               <div key={i} className="lb-feat">
                 <span className="lb-feat-dot"/>
                 {f}
@@ -74,7 +72,7 @@ export default function Login() {
       <div className="login-form-panel">
         <div className="lf-inner">
 
-          {/* Mobile-only logo header */}
+          {/* Mobile logo */}
           <div className="lf-mobile-logo">
             <div className="lf-mobile-logo-mark">
               <img src={dccLogo} alt="DCC Logo" className="lf-mobile-logo-img"/>
@@ -87,17 +85,13 @@ export default function Login() {
 
           <div className="lf-company-logo">
             <div className="lf-company-logo-circle">
-              <img src={dccLogo} alt="DCC Logo" className="lf-company-logo-img" />
+              <img src={dccLogo} alt="DCC Logo" className="lf-company-logo-img"/>
             </div>
           </div>
-          <div className="lf-mobile-logo-only">
-            <div className="lf-company-logo-circle">
-              <img src={dccLogo} alt="DCC Logo" className="lf-company-logo-img" />
-            </div>
-          </div>
+
           <div className="lf-eyebrow">Welcome back</div>
           <h2 className="lf-title">Sign in to continue</h2>
-          <p className="lf-desc">Enter your credentials or choose a demo account below</p>
+          <p className="lf-desc">Enter your username and password to access your dashboard.</p>
 
           {error && (
             <div className="login-error" role="alert">
@@ -111,14 +105,18 @@ export default function Login() {
               <label className="lf-label">Username</label>
               <div className="lf-input-wrap">
                 <svg className="lf-ico" width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5" r="3" stroke="currentColor" strokeWidth="1.5"/><path d="M2 14c0-3.314 2.686-5 6-5s6 1.686 6 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-                <input type="text" value={form.username} onChange={e => setForm(p => ({...p, username: e.target.value}))} placeholder="Enter username" required autoFocus autoComplete="username"/>
+                <input type="text" value={form.username}
+                  onChange={e => setForm(p => ({...p, username: e.target.value}))}
+                  placeholder="Enter your username" required autoFocus autoComplete="username"/>
               </div>
             </div>
             <div className="lf-field">
               <label className="lf-label">Password</label>
               <div className="lf-input-wrap">
                 <svg className="lf-ico" width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-                <input type={showPwd ? 'text' : 'password'} value={form.password} onChange={e => setForm(p => ({...p, password: e.target.value}))} placeholder="Enter password" required autoComplete="current-password"/>
+                <input type={showPwd ? 'text' : 'password'} value={form.password}
+                  onChange={e => setForm(p => ({...p, password: e.target.value}))}
+                  placeholder="Enter your password" required autoComplete="current-password"/>
                 <button type="button" className="lf-toggle" onClick={() => setShowPwd(p => !p)} tabIndex={-1}>
                   {showPwd
                     ? <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 8s2.5-5 6-5 6 5 6 5-2.5 5-6 5-6-5-6-5z" stroke="currentColor" strokeWidth="1.5"/><line x1="2" y1="2" x2="14" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
@@ -134,25 +132,9 @@ export default function Login() {
             </button>
           </form>
 
-          <div className="demo-section">
-            <div className="demo-label">Quick Demo Access</div>
-            <div className="demo-list">
-              {DEMOS.map(d => (
-                <button key={d.username} className="demo-card" onClick={() => setForm({username: d.username, password: d.password})}>
-                  <span className="demo-card-ico">{d.ico}</span>
-                  <div>
-                    <div className="demo-card-role">{d.role} — {d.tag}</div>
-                    <div className="demo-card-user">@{d.username}</div>
-                  </div>
-                  <svg className="demo-card-arr" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7h8M7 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div className="lf-footer">
             <span className="lf-status-dot"/>
-            All data stored locally · No server required · Offline ready
+            Secure login · Data encrypted · Offline ready
           </div>
         </div>
       </div>

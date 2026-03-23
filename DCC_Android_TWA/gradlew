@@ -1,0 +1,8 @@
+#!/bin/sh
+# Gradle wrapper script for Linux/Mac
+GRADLE_WRAPPER_JAR="gradle/wrapper/gradle-wrapper.jar"
+if [ ! -f "$GRADLE_WRAPPER_JAR" ]; then
+    echo "Gradle wrapper jar missing. Please use Android Studio to open and sync the project."
+    exit 1
+fi
+exec java -jar "$GRADLE_WRAPPER_JAR" "$@"

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- DCC Brand Blue -->
+    <color name="colorPrimary">#2563EB</color>
+    <color name="colorPrimaryDark">#1E40AF</color>
+    <color name="colorAccent">#10B981</color>
+
+    <!-- Navigation bar (bottom) -->
+    <color name="navigationColor">#2563EB</color>
+    <color name="navigationColorDark">#1E40AF</color>
+    <color name="navigationDividerColor">#2563EB</color>
+    <color name="navigationDividerColorDark">#1E40AF</color>
+
+    <!-- Splash screen background -->
+    <color name="backgroundColor">#F5F7FB</color>
+
+    <!-- Window background -->
+    <color name="windowBackground">#FFFFFF</color>
+</resources>

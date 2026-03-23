@@ -10,13 +10,22 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true,    // Remove console.log in production
+        drop_debugger: true,
+      }
+    },
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-          state:  ['zustand'],
+          vendor:  ['react', 'react-dom', 'react-router-dom'],
+          state:   ['zustand'],
+          leaflet: ['leaflet'],
         }
       }
-    }
+    },
+    chunkSizeWarningLimit: 600,
   }
 })
