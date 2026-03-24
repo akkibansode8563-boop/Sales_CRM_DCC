@@ -313,8 +313,71 @@
 .product-card-past { opacity: 0.6; }
 
 /* -- Profile -- */
-.profile-hero { background: linear-gradient(135deg, #EFF6FF 0%, #F0FDF4 100%); border: 1px solid var(--border); border-radius: var(--r-xl); padding: 28px 20px; text-align: center; box-shadow: var(--shadow-sm); }
-.ph-avatar { width: 64px; height: 64px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); border-radius: 18px; border: 3px solid #fff; color: #fff; font-size: 1.7rem; font-weight: 800; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; box-shadow: var(--shadow-primary); }
+.profile-hero {
+  background: linear-gradient(135deg, #EFF6FF 0%, #F0FDF4 100%);
+  border: 1px solid var(--border); border-radius: var(--r-xl);
+  padding: 28px 20px 20px; text-align: center; box-shadow: var(--shadow-sm);
+}
+
+/* Avatar wrapper with camera overlay */
+.ph-avatar-wrap {
+  position: relative; width: 80px; height: 80px; margin: 0 auto 14px;
+}
+.ph-avatar-img {
+  width: 80px; height: 80px; border-radius: 22px; object-fit: cover;
+  border: 3px solid #fff; box-shadow: var(--shadow-primary);
+  display: block;
+}
+.ph-avatar-initials {
+  width: 80px; height: 80px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  border-radius: 22px; border: 3px solid #fff; color: #fff;
+  font-size: 2rem; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-primary);
+}
+/* Fallback for old .ph-avatar usage */
+.ph-avatar {
+  width: 80px; height: 80px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  border-radius: 22px; border: 3px solid #fff; color: #fff;
+  font-size: 2rem; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 14px; box-shadow: var(--shadow-primary);
+}
+/* Camera button overlay */
+.ph-camera-btn {
+  position: absolute; bottom: -4px; right: -4px;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--primary); color: #fff;
+  border: 2px solid #fff; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 8px rgba(37,99,235,0.35);
+  transition: all 0.15s;
+}
+.ph-camera-btn:hover { background: var(--primary-dark); transform: scale(1.1); }
+/* Photo action buttons */
+.ph-photo-actions {
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px; margin-top: 12px;
+}
+.ph-photo-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 13px; border-radius: 99px;
+  font-size: 0.72rem; font-weight: 700; cursor: pointer;
+  transition: all 0.15s; font-family: var(--font);
+  border: 1.5px solid transparent;
+}
+.ph-photo-upload {
+  background: var(--primary-light); color: var(--primary);
+  border-color: var(--primary-mid);
+}
+.ph-photo-upload:hover { background: var(--primary-mid); }
+.ph-photo-remove {
+  background: var(--danger-light); color: var(--danger);
+  border-color: #FCA5A5;
+}
+.ph-photo-remove:hover { background: #FEE2E2; }
 .ph-name { color: var(--text-1); font-size: 1.15rem; font-weight: 900; font-family: var(--font-display); }
 .ph-role { color: var(--text-3); font-size: 0.75rem; margin-top: 3px; }
 .ph-username { color: var(--text-4); font-size: 0.68rem; font-family: var(--font-mono); margin-top: 2px; }

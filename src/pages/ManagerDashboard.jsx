@@ -114,6 +114,10 @@ export default function ManagerDashboard() {
   const [showIntro, setShowIntro]           = useState(() => !sessionStorage.getItem('dcc_intro_shown'))
   // Journey start modal
   const [showJourneyModal, setShowJourneyModal] = useState(false)
+  // Profile picture — persisted in localStorage per user
+  const [profilePic, setProfilePic]         = useState(() => {
+    try { return localStorage.getItem(`dcc_pfp_${user?.id}`) || null } catch { return null }
+  })
 
   const today = new Date().toISOString().split('T')[0]
 
@@ -353,6 +357,45 @@ export default function ManagerDashboard() {
     setShowJourneyModal(true)
   }
 
+  /* -- Profile picture upload -- */
+  const handleProfilePicUpload = () => {
+    const input = document.createElement('input')
+    input.type = 'file'; input.accept = 'image/*'
+    input.onchange = e => {
+      const file = e.target.files[0]
+      if (!file) return
+      if (file.size > 2 * 1024 * 1024) { toastMsg('Image too large — max 2MB', 'error'); return }
+      const reader = new FileReader()
+      reader.onload = ev => {
+        const dataUrl = ev.target.result
+        // Resize to 256x256 using canvas before storing
+        const img = new Image()
+        img.onload = () => {
+          const canvas = document.createElement('canvas')
+          canvas.width = 256; canvas.height = 256
+          const ctx = canvas.getContext('2d')
+          // Center-crop
+          const size = Math.min(img.width, img.height)
+          const sx = (img.width - size) / 2
+          const sy = (img.height - size) / 2
+          ctx.drawImage(img, sx, sy, size, size, 0, 0, 256, 256)
+          const compressed = canvas.toDataURL('image/jpeg', 0.85)
+          setProfilePic(compressed)
+          try { localStorage.setItem(`dcc_pfp_${user?.id}`, compressed) } catch {}
+          toastMsg('Profile photo updated ✅')
+        }
+        img.src = dataUrl
+      }
+      reader.readAsDataURL(file)
+    }
+    input.click()
+  }
+  const handleRemoveProfilePic = () => {
+    setProfilePic(null)
+    try { localStorage.removeItem(`dcc_pfp_${user?.id}`) } catch {}
+    toastMsg('Profile photo removed')
+  }
+
   /* Called by JourneyStartModal after user picks mode */
   const handleJourneyLaunch = async (mode, gpsCoords) => {
     setShowJourneyModal(false)
@@ -470,8 +513,11 @@ export default function ManagerDashboard() {
       <header className="mgr-header">
         <div className="mgr-hdr-top">
           <div className="mgr-user">
-            <div className="mgr-avatar mgr-avatar-logo">
-              <img src={dccLogo} alt="DCC" className="mgr-logo-img"/>
+            <div className="mgr-avatar mgr-avatar-logo" onClick={()=>setTab('profile')} style={{cursor:'pointer'}}>
+              {profilePic
+                ? <img src={profilePic} alt="Profile" style={{width:'100%',height:'100%',objectFit:'cover',borderRadius:'inherit'}}/>
+                : <img src={dccLogo} alt="DCC" className="mgr-logo-img"/>
+              }
             </div>
             <div>
               <div className="mgr-name">{user?.full_name}</div>
@@ -614,9 +660,15 @@ export default function ManagerDashboard() {
 
             {/* KPI Cards */}
             <div className="kpi-grid">
+              {/* Visits card */}
               <div className="kpi-card">
                 <div className="kpi-top">
-                  <div className="kpi-ico" style={{background:'#ECFDF5',fontSize:'1.1rem'}} dangerouslySetInnerHTML={{__html:'&#x1F4CD;'}}/>
+                  <div className="kpi-ico" style={{background:'#ECFDF5'}}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+                      <circle cx="12" cy="9" r="2.5"/>
+                    </svg>
+                  </div>
                   <span className="kpi-badge" style={{background:'#ECFDF5',color:'#059669'}}>{latestTarget?.visit_target?`${Math.round(visitPct)}%`:'Today'}</span>
                 </div>
                 <div className="kpi-val">{todayVisits.length}</div>
@@ -624,10 +676,15 @@ export default function ManagerDashboard() {
                 <div className="kpi-bar"><div className="kpi-fill" style={{width:`${visitPct}%`,background:'#10B981'}}/></div>
                 <div className="kpi-foot">Target: {latestTarget?.visit_target||'Not set'}</div>
               </div>
+              {/* Sales card */}
               <div className="kpi-card">
                 <div className="kpi-top">
-                  <div className="kpi-ico" style={{background:var_pl,fontSize:'1.1rem'}} dangerouslySetInnerHTML={{__html:'&#x1F4B0;'}}/>
-                  <span className="kpi-badge" style={{background:var_pl,color:salesPct>=100?'#059669':'#2563EB'}}>
+                  <div className="kpi-ico" style={{background:'#EFF6FF'}}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
+                    </svg>
+                  </div>
+                  <span className="kpi-badge" style={{background:'#EFF6FF',color:salesPct>=100?'#059669':'#2563EB'}}>
                     {salesPct>0?`${Math.round(salesPct)}%`:'No data'}
                   </span>
                 </div>
@@ -638,9 +695,15 @@ export default function ManagerDashboard() {
               </div>
               {journey && (
                 <>
+                  {/* Distance card */}
                   <div className="kpi-card">
                     <div className="kpi-top">
-                      <div className="kpi-ico" style={{background:'#F5F3FF'}}>🛣️</div>
+                      <div className="kpi-ico" style={{background:'#F5F3FF'}}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="5" cy="12" r="3"/><circle cx="19" cy="12" r="3"/>
+                          <path d="M8 12h8M5 9V6a1 1 0 011-1h12a1 1 0 011 1v3M5 15v3a1 1 0 001 1h12a1 1 0 001-1v-3"/>
+                        </svg>
+                      </div>
                       <span className="kpi-badge" style={{background:'#F5F3FF',color:'#7C3AED'}}>km</span>
                     </div>
                     <div className="kpi-val">{journeyKm.toFixed(1)}</div>
@@ -648,9 +711,15 @@ export default function ManagerDashboard() {
                     <div className="kpi-bar"><div className="kpi-fill" style={{width:'60%',background:'#7C3AED'}}/></div>
                     <div className="kpi-foot">Est. drive: {calcTravelTime(journeyKm)}</div>
                   </div>
+                  {/* Duration card */}
                   <div className="kpi-card">
                     <div className="kpi-top">
-                      <div className="kpi-ico" style={{background:'#FFFBEB'}}>⏱️</div>
+                      <div className="kpi-ico" style={{background:'#FFFBEB'}}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="10"/>
+                          <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                      </div>
                       <span className="kpi-badge" style={{background:'#FFFBEB',color:'#D97706'}}>live</span>
                     </div>
                     <div className="kpi-val">{calcElapsed(journey.start_time)}</div>
@@ -667,17 +736,17 @@ export default function ManagerDashboard() {
               <div className="section-row"><span className="section-label">Quick Actions</span></div>
               <div className="qa-row">
                 {[
-                  {ico:'&#x1F5FA;',  bg:'#EFF6FF', lbl:'Journey\nMap',      fn:()=>setShowMap(true)},
-                  {ico:'&#x1F4CD;',  bg:'#ECFDF5', lbl:'Log\nVisit',        fn:()=>{setVf(initVF());setVisitModal(true)}},
-                  {ico:'&#x1F3EA;',  bg:'#FEF3C7', lbl:'Customers',          fn:()=>setTab('customers')},
-                  {ico:'&#x1F4CA;',  bg:'#FFFBEB', lbl:'Sales\nReport',     fn:()=>{setSf(initSF());setSalesModal(true)}},
-                  {ico:'&#x1F4E6;',  bg:'#F5F3FF', lbl:'Product\nEntry',    fn:()=>{setEditProd(null);setPf(initPF());setProductModal(true)}},
-                  {ico:'&#x1F4E1;',  bg:'#ECFDF5', lbl:'Nearby\nVisit',     fn:checkNearby},
-                  {ico:'&#x1F4AC;',  bg:'#DCFCE7', lbl:'Share\nOrder',      fn:shareOrderOnWhatsApp},
-                  {ico:'&#x1F514;',  bg:'#FFF7ED', lbl:'Enable\nAlerts',    fn:requestNotificationPermission},
+                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>, bg:'#EFF6FF', lbl:'Journey\nMap', fn:()=>setShowMap(true)},
+                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>, bg:'#ECFDF5', lbl:'Log\nVisit', fn:()=>{setVf(initVF());setVisitModal(true)}},
+                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>, bg:'#FEF3C7', lbl:'Customers', fn:()=>setTab('customers')},
+                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>, bg:'#FFFBEB', lbl:'Sales\nReport', fn:()=>{setSf(initSF());setSalesModal(true)}},
+                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>, bg:'#F5F3FF', lbl:'Product\nEntry', fn:()=>{setEditProd(null);setPf(initPF());setProductModal(true)}},
+                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#06B6D4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>, bg:'#ECFEFF', lbl:'Nearby\nVisit', fn:checkNearby},
+                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#25D366" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>, bg:'#DCFCE7', lbl:'Share\nOrder', fn:shareOrderOnWhatsApp},
+                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>, bg:'#FFF7ED', lbl:'Enable\nAlerts', fn:requestNotificationPermission},
                 ].map((a,i)=>(
                   <div key={i} className="qa-card" onClick={a.fn}>
-                    <div className="qa-ico" style={{background:a.bg}} dangerouslySetInnerHTML={{__html:a.ico}}/>
+                    <div className="qa-ico" style={{background:a.bg}}>{a.ico}</div>
                     <div className="qa-lbl">{a.lbl}</div>
                   </div>
                 ))}
@@ -935,11 +1004,43 @@ export default function ManagerDashboard() {
         {/* ---- PROFILE ---- */}
         {tab==='profile' && (
           <div className="tab-pane">
+            {/* ── Profile Hero with photo upload ── */}
             <div className="profile-hero">
-              <div className="ph-avatar">{user?.full_name?.[0]}</div>
+              {/* Avatar with camera overlay */}
+              <div className="ph-avatar-wrap">
+                {profilePic
+                  ? <img src={profilePic} alt="Profile" className="ph-avatar-img"/>
+                  : <div className="ph-avatar ph-avatar-initials">{user?.full_name?.[0]?.toUpperCase()}</div>
+                }
+                {/* Camera upload button */}
+                <button className="ph-camera-btn" onClick={handleProfilePicUpload} title="Change photo">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+                    <circle cx="12" cy="13" r="4"/>
+                  </svg>
+                </button>
+              </div>
               <div className="ph-name">{user?.full_name}</div>
               <div className="ph-role">Sales Manager</div>
               <div className="ph-username">@{user?.username}</div>
+              {/* Photo action buttons */}
+              <div className="ph-photo-actions">
+                <button className="ph-photo-btn ph-photo-upload" onClick={handleProfilePicUpload}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+                    <circle cx="12" cy="13" r="4"/>
+                  </svg>
+                  {profilePic ? 'Change Photo' : 'Add Photo'}
+                </button>
+                {profilePic && (
+                  <button className="ph-photo-btn ph-photo-remove" onClick={handleRemoveProfilePic}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+                    </svg>
+                    Remove
+                  </button>
+                )}
+              </div>
             </div>
             <div className="prof-stats">
               {[{v:allVisits.length,l:'Visits'},{v:reports.length,l:'Reports'},{v:products.length,l:'Products'}].map(s=>(
@@ -1029,15 +1130,15 @@ export default function ManagerDashboard() {
       {/* -- Tab Bar -- */}
       <nav className="tab-bar">
         {[
-          {id:'home',ico:'&#x1F3E0;',lbl:'Home'},
-          {id:'visits',ico:'&#x1F4CD;',lbl:'Visits'},
-          {id:'customers',ico:'&#x1F3EA;',lbl:'Customers'},
-          {id:'reports',ico:'&#x1F4CA;',lbl:'Reports'},
-          {id:'products',ico:'&#x1F4E6;',lbl:'Products'},
-          {id:'profile',ico:'&#x1F464;',lbl:'Profile'}
+          {id:'home',lbl:'Home',ico:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>},
+          {id:'visits',lbl:'Visits',ico:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>},
+          {id:'customers',lbl:'Customers',ico:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>},
+          {id:'reports',lbl:'Reports',ico:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>},
+          {id:'products',lbl:'Products',ico:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>},
+          {id:'profile',lbl:'Profile',ico:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>},
         ].map(t=>(
           <button key={t.id} className={`tab-btn ${tab===t.id?'tab-active':''}`} onClick={()=>setTab(t.id)}>
-            <div className="tab-ico-bg"><span className="tab-ico" dangerouslySetInnerHTML={{__html:t.ico}}/></div>
+            <div className="tab-ico-bg">{t.ico}</div>
             <span className="tab-lbl">{t.lbl}</span>
           </button>
         ))}
