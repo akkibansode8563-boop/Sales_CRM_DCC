@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&family=Nunito+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=Nunito+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap&display=swap');
 
 :root {
   /* ── Light Enterprise Palette ── */
@@ -145,3 +145,45 @@ input:disabled  { opacity: 0.6; cursor: not-allowed; background: var(--surface-2
 
 /* Tabular numbers for metrics */
 .tabular { font-variant-numeric: tabular-nums; }
+
+/* ─────────────────────────────────────────────
+   PERFORMANCE OPTIMIZATIONS
+   ─────────────────────────────────────────────*/
+
+/* GPU-accelerate only what's animated */
+.jh-btn-start,
+.jh-badge-dot,
+.toast,
+.modal,
+.modal-overlay,
+.tab-bar,
+.mgr-header { will-change: transform; }
+
+/* Prevent layout thrash on tab switches */
+.tab-pane { contain: layout style; }
+
+/* Fast scroll on long lists */
+.panel-body,
+.mgr-main,
+.admin-content { -webkit-overflow-scrolling: touch; scroll-behavior: smooth; }
+
+/* Reduce paint area for fixed elements */
+.toast,
+.offline-banner,
+.nearby-banner { contain: layout paint; }
+
+/* Image rendering — crisp logos */
+img { image-rendering: -webkit-optimize-contrast; }
+.mgr-logo-img,
+.lb-logo-img,
+.lf-company-logo-img { image-rendering: auto; }
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .jh-btn-start::after { display: none; }
+}

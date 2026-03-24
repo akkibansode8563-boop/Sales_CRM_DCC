@@ -232,6 +232,14 @@ export default function ManagerDashboard() {
     }
   }
 
+  // Granular reload helpers — only re-read what actually changed
+  const reloadVisits    = useCallback(() => { if (user?.id) { setTodayVisits(getTodayVisits(user.id)); setAllVisits(getAllVisits(user.id)) } }, [user?.id])
+  const reloadJourney   = useCallback(() => { if (user?.id) setJourney(getActiveJourney(user.id)) }, [user?.id])
+  const reloadReports   = useCallback(() => { if (user?.id) setReports(getDailySalesReports(user.id)) }, [user?.id])
+  const reloadProducts  = useCallback(() => { if (user?.id) setProducts(getProductDayEntries(user.id)) }, [user?.id])
+  const reloadCustomers = useCallback(() => setCustomers(getCustomers()), [])
+
+  // Full reload — only call on mount or major state changes
   const reload = useCallback(() => {
     if (!user?.id) return
     setStatus(getCurrentStatus(user.id))
@@ -374,7 +382,7 @@ export default function ManagerDashboard() {
   /* -- Map visit log -- */
   const onVisitLogged = data => {
     createVisit({...data, manager_id:user.id, visit_date:today})
-    reload(); toastMsg(`Stop #${todayVisits.length+1} logged ✅`)
+    reloadVisits(); toastMsg(`Stop #${todayVisits.length+1} logged ✅`)
   }
 
   /* -- Visit modal submit -- */
@@ -403,7 +411,7 @@ export default function ManagerDashboard() {
   const submitSales = () => {
     if (!sf.sales_achievement) return toastMsg('Sales achievement required','error')
     saveDailySalesReport({ manager_id:user.id, date:today, sales_target:+sf.sales_target||0, sales_achievement:+sf.sales_achievement||0, profit_target:+sf.profit_target||0, profit_achievement:+sf.profit_achievement||0 })
-    setSalesModal(false); setSf(initSF()); reload(); toastMsg('Report submitted ✅')
+    setSalesModal(false); setSf(initSF()); reloadReports(); toastMsg('Report submitted ✅')
   }
   const salesAchPct = sf.sales_target>0&&sf.sales_achievement>0 ? Math.round((+sf.sales_achievement/+sf.sales_target)*100) : null
 
@@ -415,7 +423,7 @@ export default function ManagerDashboard() {
     } else {
       createProductDayEntry({ manager_id:user.id, date:today, brand:pf.brand, brand_id:pf.brand_id||null, product_name:pf.product_name, product_id:pf.product_id||null, target_qty:+pf.target_qty||0, achieved_qty:+pf.achieved_qty||0, target_amount:+pf.target_amount||0, achieved_amount:+pf.achieved_amount||0 })
     }
-    setProductModal(false); setEditProd(null); setPf(initPF()); reload()
+    setProductModal(false); setEditProd(null); setPf(initPF()); reloadProducts()
     toastMsg(editProd?'Updated ✅':'Product entry added ✅')
   }
   const openEditProd = p => {
@@ -425,19 +433,19 @@ export default function ManagerDashboard() {
   }
   const prodPct = pf.target_qty>0&&pf.achieved_qty>0 ? Math.round((+pf.achieved_qty/+pf.target_qty)*100) : null
 
-  /* -- Computed -- */
-  const todayReport   = reports.find(r=>r.date===today)
-  const todayProducts = products.filter(p=>p.date===today)
-  const pastProducts  = products.filter(p=>p.date!==today)
-  const latestTarget  = targets.sort((a,b)=>b.year-a.year||b.month-a.month)[0]
-  const visitPct  = latestTarget?.visit_target ? Math.min((todayVisits.length/latestTarget.visit_target)*100,100) : 0
-  const salesPct  = latestTarget?.sales_target&&todayReport ? Math.min((todayReport.sales_achievement/latestTarget.sales_target)*100,100) : 0
-  const sm = STATUS_META[status]||STATUS_META['In-Office']
-  const journeyKm = todayVisits.reduce((sum,v,i)=>{
+  /* -- Computed (memoized to avoid re-calc on every render) -- */
+  const todayReport   = useMemo(() => reports.find(r=>r.date===today),   [reports, today])
+  const todayProducts = useMemo(() => products.filter(p=>p.date===today), [products, today])
+  const pastProducts  = useMemo(() => products.filter(p=>p.date!==today), [products, today])
+  const latestTarget  = useMemo(() => [...targets].sort((a,b)=>b.year-a.year||b.month-a.month)[0], [targets])
+  const visitPct      = useMemo(() => latestTarget?.visit_target ? Math.min((todayVisits.length/latestTarget.visit_target)*100,100) : 0, [todayVisits.length, latestTarget])
+  const salesPct      = useMemo(() => latestTarget?.sales_target&&todayReport ? Math.min((todayReport.sales_achievement/latestTarget.sales_target)*100,100) : 0, [todayReport, latestTarget])
+  const sm            = STATUS_META[status]||STATUS_META['In-Office']
+  const journeyKm     = useMemo(() => todayVisits.reduce((sum,v,i)=>{
     const pl=i===0?journey?.start_latitude:todayVisits[i-1]?.latitude
     const pn=i===0?journey?.start_longitude:todayVisits[i-1]?.longitude
     return sum+(pl&&v.latitude?calcDistanceKm(pl,pn,v.latitude,v.longitude):0)
-  }, 0)
+  }, 0), [todayVisits, journey])
 
   /* -- Visitor stat chip -- */
   const StatusChip = ({s}) => {
@@ -835,7 +843,7 @@ export default function ManagerDashboard() {
                         <div><div className="pc-brand-tag">{p.brand}</div><div className="pc-name">{p.product_name}</div></div>
                         <div className="pc-btns">
                           <button className="pc-btn" onClick={()=>openEditProd(p)}>✏️</button>
-                          <button className="pc-btn pc-btn-del" onClick={()=>{deleteProductDayEntry(p.id);reload();toastMsg('Deleted')}}>🗑️</button>
+                          <button className="pc-btn pc-btn-del" onClick={()=>{deleteProductDayEntry(p.id);reloadProducts();toastMsg('Deleted')}}>🗑️</button>
                         </div>
                       </div>
                       <div className="pc-metrics">
@@ -858,7 +866,7 @@ export default function ManagerDashboard() {
                     <div key={p.id} className="product-card product-card-past">
                       <div className="pc-head">
                         <div><div className="pc-brand-tag">{p.brand} · {fmtDate(p.date)}</div><div className="pc-name">{p.product_name}</div></div>
-                        <button className="pc-btn pc-btn-del" onClick={()=>{deleteProductDayEntry(p.id);reload()}}>🗑️</button>
+                        <button className="pc-btn pc-btn-del" onClick={()=>{deleteProductDayEntry(p.id);reloadProducts()}}>🗑️</button>
                       </div>
                       <div className="pc-metrics">
                         <div className="pc-metric"><div className="pc-metric-lbl">Qty</div><div className="pc-metric-val">{p.achieved_qty}/{p.target_qty}</div></div>
@@ -1317,7 +1325,7 @@ export default function ManagerDashboard() {
       {showAddCustomer && (
         <AddCustomerModal
           createdBy={user?.id}
-          onCreated={c => { reload(); toastMsg(`✅ "${c.name}" added with GPS location`) }}
+          onCreated={c => { reloadCustomers(); toastMsg(`✅ "${c.name}" added with GPS location`) }}
           onClose={()=>setShowAddCustomer(false)}
         />
       )}

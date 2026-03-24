@@ -43,12 +43,16 @@ const INITIAL_DB = {
   recentBrands:    [],
 }
 
+// ── In-memory cache: read localStorage ONCE, mutate in RAM, flush on writes ──
+let _dbCache = null
+let _saveTimer = null
+
 function getDB() {
+  if (_dbCache) return _dbCache          // instant — no JSON.parse
   try {
     const raw = localStorage.getItem(DB_KEY)
-    if (!raw) { saveDB(INITIAL_DB); return JSON.parse(JSON.stringify(INITIAL_DB)) }
-    const db = JSON.parse(raw)
-    // Migration: ensure ALL tables exist (guards against old/corrupt localStorage)
+    const db  = raw ? JSON.parse(raw) : JSON.parse(JSON.stringify(INITIAL_DB))
+    // Migration guards
     if (!Array.isArray(db.users))               db.users               = INITIAL_DB.users
     if (!Array.isArray(db.visits))              db.visits              = []
     if (!Array.isArray(db.targets))             db.targets             = []
@@ -64,18 +68,34 @@ function getDB() {
     if (!Array.isArray(db.recentProducts))      db.recentProducts      = []
     if (!Array.isArray(db.recentBrands))        db.recentBrands        = []
     if (!Array.isArray(db.offline_queue))       db.offline_queue       = []
-    // Ensure customers have lat/lng fields
     db.customers.forEach(c => {
-      if (c.latitude === undefined)  c.latitude  = null
+      if (c.latitude  === undefined) c.latitude  = null
       if (c.longitude === undefined) c.longitude = null
-      if (c.owner_name === undefined) c.owner_name = ''
-      if (c.created_by === undefined) c.created_by = null
+      if (!c.owner_name) c.owner_name = ''
+      if (!c.created_by) c.created_by = null
     })
-    return db
-  } catch { saveDB(INITIAL_DB); return JSON.parse(JSON.stringify(INITIAL_DB)) }
+    if (!raw) saveDB(db)
+    _dbCache = db
+    return _dbCache
+  } catch { _dbCache = JSON.parse(JSON.stringify(INITIAL_DB)); saveDB(_dbCache); return _dbCache }
 }
 
-function saveDB(db) { localStorage.setItem(DB_KEY, JSON.stringify(db)) }
+// Debounced write: flush to localStorage max once per 300ms
+function saveDB(db) {
+  _dbCache = db
+  if (_saveTimer) clearTimeout(_saveTimer)
+  _saveTimer = setTimeout(() => {
+    try { localStorage.setItem(DB_KEY, JSON.stringify(db)) } catch(e) {}
+    _saveTimer = null
+  }, 300)
+}
+
+// Immediate flush for critical writes (auth, journey start/end)
+function saveDBNow(db) {
+  _dbCache = db
+  if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null }
+  try { localStorage.setItem(DB_KEY, JSON.stringify(db)) } catch(e) {}
+}
 function nextId(arr) { return arr.length>0 ? Math.max(...arr.map(i=>i.id||0))+1 : 1 }
 
 // -------------------------------------------
@@ -97,7 +117,7 @@ export async function authLogin(username, password) {
   // Save plain password on every successful login so admin can always see it
   const uidx = db.users.findIndex(u => u.id === user.id)
   if (uidx !== -1 && db.users[uidx].plain_password !== password.trim()) {
-    db.users[uidx].plain_password = password.trim(); saveDB(db)
+    db.users[uidx].plain_password = password.trim(); saveDBNow(db)
   }
   return { success:true, user_id:user.id, username:user.username, role:user.role, full_name:user.full_name, token:generateToken(user) }
 }

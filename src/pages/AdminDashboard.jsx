@@ -18,18 +18,25 @@ import {
     getAllVisitsAllSync,
     getCustomersSync
   } from '../utils/supabaseDB'
-import JourneyReplay from '../components/JourneyReplay'
-import SalesHeatmap  from '../components/SalesHeatmap'
+import { lazy, Suspense } from 'react'
 import { getStorageMode, isSupabaseConfigured } from '../utils/supabaseClient'
 import { downloadPDFReport, downloadCSVReport } from '../utils/reportGenerator'
-import { DailySalesTrendChart, VisitBarChart, ProductBarChart, MonthlyComparisonChart } from '../components/charts/SalesChart'
-import Leaderboard from '../components/dashboard/Leaderboard'
-import AIInsights from '../components/dashboard/AIInsights'
-import CustomerIntelligence from '../components/dashboard/CustomerIntelligence'
-import ProductPerformance from '../components/dashboard/ProductPerformance'
-import LiveManagerMap from '../components/maps/LiveManagerMap'
-import LiveLocationMonitor from '../components/maps/LiveLocationMonitor'
 import { KPICard, SectionHeader, EmptyState, StatusBadge, Badge, ProgressBar } from '../components/ui/index'
+
+// Heavy components — lazy loaded only when their tab is opened
+const JourneyReplay   = lazy(() => import('../components/JourneyReplay'))
+const SalesHeatmap    = lazy(() => import('../components/SalesHeatmap'))
+const LiveLocationMonitor = lazy(() => import('../components/maps/LiveLocationMonitor'))
+const LiveManagerMap  = lazy(() => import('../components/maps/LiveManagerMap'))
+
+// Chart components — imported directly (used on multiple tabs)
+import { DailySalesTrendChart, VisitBarChart, ProductBarChart, MonthlyComparisonChart } from '../components/charts/SalesChart'
+
+// Dashboard widgets
+const Leaderboard          = lazy(() => import('../components/dashboard/Leaderboard'))
+const AIInsights           = lazy(() => import('../components/dashboard/AIInsights'))
+const CustomerIntelligence = lazy(() => import('../components/dashboard/CustomerIntelligence'))
+const ProductPerformance   = lazy(() => import('../components/dashboard/ProductPerformance'))
 // merged into main supabaseDB import above
 import { startAutoSync, getQueueCount, onSyncStatusChange } from '../services/syncService'
 import './AdminDashboard.css'
@@ -481,7 +488,7 @@ useEffect(() => {
                     </div>
                   </div>
                   <div className="panel-body" style={{padding:'12px 16px'}}>
-                    <Leaderboard managers={leaderboardData} period={leaderPeriod}/>
+                    <Suspense fallback={null}><Leaderboard managers={leaderboardData} period={leaderPeriod}/></Suspense>
                   </div>
                 </div>
               </div>
@@ -558,7 +565,7 @@ useEffect(() => {
                     </select>
                   </div>
                   <div className="panel-body" style={{padding:'12px'}}>
-                    <AIInsights suggestions={aiMgrId ? getAISuggestions(aiMgrId) : []} managerName={salesManagers.find(m=>m.id===aiMgrId)?.full_name}/>
+                    <Suspense fallback={null}><AIInsights suggestions={aiMgrId ? getAISuggestions(aiMgrId) : []} managerName={salesManagers.find(m=>m.id===aiMgrId)?.full_name}/></Suspense>
                   </div>
                 </div>
               </div>
@@ -1161,11 +1168,11 @@ useEffect(() => {
           {tab==='livemap' && (
             <div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 140px)',minHeight:600}}>
               <div className="panel" style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',padding:0}}>
-                <LiveLocationMonitor
+                <Suspense fallback={<div style={{display:'flex',alignItems:'center',justifyContent:'center',padding:40,color:'#6B7280'}}>Loading map...</div>}><LiveLocationMonitor
                   managers={managers}
                   salesManagers={salesManagers}
                   onRefresh={reload}
-                />
+                /></Suspense>
               </div>
             </div>
           )}
@@ -1175,7 +1182,7 @@ useEffect(() => {
             <div className="panel">
               <SectionHeader title="&#x1F3EA; Customer Intelligence" count={allCustomers.length} subtitle="Visit history, purchase patterns and priority scoring" actions={<button className="panel-action" onClick={reload}>Refresh</button>}/>
               <div className="panel-body" style={{padding:'16px'}}>
-                <CustomerIntelligence customers={allCustomers} visits={allVisitsData} managers={salesManagers}/>
+                <Suspense fallback={null}><CustomerIntelligence customers={allCustomers} visits={allVisitsData} managers={salesManagers}/></Suspense>
               </div>
             </div>
           )}
@@ -1197,7 +1204,7 @@ useEffect(() => {
                   }
                 />
                 <div className="panel-body" style={{padding:'16px'}}>
-                  <ProductPerformance productEntries={analyticsData?.managerStats?.flatMap(m=>m.productPerformance)||[]} period={analyticsPeriod}/>
+                  <Suspense fallback={null}><ProductPerformance productEntries={analyticsData?.managerStats?.flatMap(m=>m.productPerformance)||[]} period={analyticsPeriod}/></Suspense>
                 </div>
               </div>
             </div>
@@ -1335,7 +1342,7 @@ useEffect(() => {
         </div>
       )}
 
-      {showReplay && <JourneyReplay onClose={()=>setShowReplay(false)}/>}
+      {showReplay && <Suspense fallback={<div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.5)',zIndex:9999,color:'#fff',fontSize:'1rem',fontWeight:700}}>Loading Replay...</div>}><JourneyReplay onClose={()=>setShowReplay(false)}/></Suspense>}
       {tab==='heatmap' && <SalesHeatmapInline onReplay={()=>setShowReplay(true)}/>}
     </div>
   )
