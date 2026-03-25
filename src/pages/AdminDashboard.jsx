@@ -58,16 +58,16 @@ const fmtDate      = iso => iso ? new Date(iso).toLocaleDateString('en-IN',{day:
 const fmtDateShort = iso => iso ? new Date(iso).toLocaleDateString('en-IN',{day:'numeric',month:'short'}) : '--'
 
 const NAV = [
-  { id:'overview',  ico:'&#x1F4CA;', lbl:'Overview'  },
-  { id:'managers',  ico:'&#x1F465;', lbl:'Managers'  },
-  { id:'drilldown', ico:'&#x1F50D;', lbl:'Detail'    },
-  { id:'livemap',   ico:'&#x1F5FA;', lbl:'Live Map'  },
-  { id:'heatmap',   ico:'&#x1F525;', lbl:'Heatmap'   },
-  { id:'targets',   ico:'&#x1F3AF;', lbl:'Targets'   },
-  { id:'analytics', ico:'&#x1F4C8;', lbl:'Analytics' },
-  { id:'customers', ico:'&#x1F3EA;', lbl:'Customers' },
-  { id:'products',  ico:'&#x1F4E6;', lbl:'Products'  },
-  { id:'users',     ico:'&#x2699;',  lbl:'Users'     },
+  { id:'overview',  lbl:'Overview',  ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> },
+  { id:'managers',  lbl:'Managers',  ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg> },
+  { id:'drilldown', lbl:'Detail',    ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> },
+  { id:'livemap',   lbl:'Live Map',  ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg> },
+  { id:'heatmap',   lbl:'Heatmap',   ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a7 7 0 017 7c0 5-7 13-7 13S5 14 5 9a7 7 0 017-7z"/><circle cx="12" cy="9" r="2.5"/></svg> },
+  { id:'targets',   lbl:'Targets',   ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg> },
+  { id:'analytics', lbl:'Analytics', ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> },
+  { id:'customers', lbl:'Customers', ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> },
+  { id:'products',  lbl:'Products',  ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> },
+  { id:'users',     lbl:'Users',     ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg> },
 ]
 
 export default function AdminDashboard() {
@@ -282,14 +282,14 @@ useEffect(() => {
   const KPIs = () => (
     <div className="kpi-bar-4">
       {[
-        { n:salesManagers.length, l:'Total Managers', ico:'', bg:'#EFF6FF', tc:'#2563EB', pill:users.length + ' total users' },
-        { n:onField,              l:'On Field Now',   ico:'', bg:'#ECFDF5', tc:'#059669', pill:onField>0?'Active':'None' },
-        { n:totalVisitsToday,     l:'Visits Today',   ico:'', bg:'#FFFBEB', tc:'#D97706', pill:activeJourneys + ' live routes' },
-        { n:fmt(totalSalesToday), l:'Sales Today',    ico:'', bg:'#F5F3FF', tc:'#7C3AED', pill:'all managers' },
+        { n:salesManagers.length, l:'Total Managers', ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>, bg:'#EFF6FF', tc:'#2563EB', pill:users.length + ' total users' },
+        { n:onField,              l:'On Field Now',   ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>, bg:'#ECFDF5', tc:'#059669', pill:onField>0?'Active':'None' },
+        { n:totalVisitsToday,     l:'Visits Today',   ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>, bg:'#FFFBEB', tc:'#D97706', pill:activeJourneys + ' live routes' },
+        { n:fmt(totalSalesToday), l:'Sales Today',    ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>, bg:'#F5F3FF', tc:'#7C3AED', pill:'all managers' },
       ].map((k,i) => (
         <div key={i} className="akpi">
           <div className="akpi-top">
-            <div className="akpi-ico" style={{background:k.bg,fontSize:'1rem'}} dangerouslySetInnerHTML={{__html:k.ico}}/>
+            <div className="akpi-ico" style={{background:k.bg}}>{k.ico}</div>
             <span className="akpi-pill" style={{background:k.bg,color:k.tc}}>{k.pill}</span>
           </div>
           <div className="akpi-val" style={{fontSize:typeof k.n==='string'?'1.1rem':'1.8rem'}}>{k.n}</div>
@@ -299,8 +299,12 @@ useEffect(() => {
     </div>
   )
 
-  const Sidebar = () => (
-    <>
+
+
+  return (
+    <div className="admin-root">
+      {toast && <div className={'toast toast-' + toast.type}>{toast.msg}</div>}
+      <>
       {sidebarOpen && <div className="sb-overlay" onClick={()=>setSidebarOpen(false)}/>}
       <aside className={'sidebar ' + (sidebarOpen ? 'sb-open' : '')}>
         <div className="sb-header">
@@ -316,7 +320,7 @@ useEffect(() => {
           <span className="sb-grp-lbl">Dashboard</span>
           {NAV.slice(0,3).map(n => (
             <button key={n.id} className={'sb-item ' + (tab===n.id ? 'sb-active' : '')} onClick={()=>{setTab(n.id);setSidebarOpen(false)}}>
-              <div className="sb-item-ico-wrap" dangerouslySetInnerHTML={{__html:n.ico}}/>
+              <div className="sb-item-ico-wrap">{n.ico}</div>
               <span className="sb-item-lbl">{n.lbl}</span>
               {n.id==='overview' && onField>0 && <span className="sb-live-badge">{onField} live</span>}
             </button>
@@ -324,21 +328,21 @@ useEffect(() => {
           <span className="sb-grp-lbl">Field</span>
           {NAV.slice(3,6).map(n => (
             <button key={n.id} className={'sb-item ' + (tab===n.id ? 'sb-active' : '')} onClick={()=>{setTab(n.id);setSidebarOpen(false)}}>
-              <div className="sb-item-ico-wrap" dangerouslySetInnerHTML={{__html:n.ico}}/>
+              <div className="sb-item-ico-wrap">{n.ico}</div>
               <span className="sb-item-lbl">{n.lbl}</span>
             </button>
           ))}
           <span className="sb-grp-lbl">Analytics</span>
           {NAV.slice(6,9).map(n => (
             <button key={n.id} className={'sb-item ' + (tab===n.id ? 'sb-active' : '')} onClick={()=>{setTab(n.id);setSidebarOpen(false)}}>
-              <div className="sb-item-ico-wrap" dangerouslySetInnerHTML={{__html:n.ico}}/>
+              <div className="sb-item-ico-wrap">{n.ico}</div>
               <span className="sb-item-lbl">{n.lbl}</span>
             </button>
           ))}
           <span className="sb-grp-lbl">Settings</span>
           {NAV.slice(9).map(n => (
             <button key={n.id} className={'sb-item ' + (tab===n.id ? 'sb-active' : '')} onClick={()=>{setTab(n.id);setSidebarOpen(false)}}>
-              <div className="sb-item-ico-wrap" dangerouslySetInnerHTML={{__html:n.ico}}/>
+              <div className="sb-item-ico-wrap">{n.ico}</div>
               <span className="sb-item-lbl">{n.lbl}</span>
             </button>
           ))}
@@ -374,12 +378,6 @@ useEffect(() => {
         </div>
       </aside>
     </>
-  )
-
-  return (
-    <div className="admin-root">
-      {toast && <div className={'toast toast-' + toast.type}>{toast.msg}</div>}
-      <Sidebar/>
       <div className="admin-main">
 
         <div className="admin-mobile-header">
@@ -413,14 +411,17 @@ useEffect(() => {
         <div className="admin-mobile-tabs">
           {NAV.map(n => (
             <button key={n.id} className={'amt ' + (tab===n.id ? 'amt-active' : '')} onClick={()=>setTab(n.id)}>
-              <span dangerouslySetInnerHTML={{__html:n.ico}}/> {n.lbl}
+              <span className="amt-ico">{n.ico}</span> {n.lbl}
             </button>
           ))}
         </div>
 
         <div className="admin-topbar">
           <div>
-            <div className="atb-title" dangerouslySetInnerHTML={{__html:(NAV.find(n=>n.id===tab)?.ico||'') + ' ' + (NAV.find(n=>n.id===tab)?.lbl||'')}}/>
+            <div className="atb-title" style={{display:'flex',alignItems:'center',gap:6}}>
+              {NAV.find(n=>n.id===tab)?.ico}
+              <span>{NAV.find(n=>n.id===tab)?.lbl}</span>
+            </div>
             <div className="atb-sub">{new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
           </div>
           <div className="atb-right">
@@ -601,7 +602,7 @@ useEffect(() => {
                             <div className="lc-metrics">
                               <div className="lc-metric"><div className="lc-metric-val">{m.visits_today}</div><div className="lc-metric-lbl">Visits</div></div>
                               <div className="lc-metric"><div className="lc-metric-val" style={{color:m.today_sales>0?'#2563EB':'#9CA3AF',fontSize:'0.78rem'}}>{fmt(m.today_sales)}</div><div className="lc-metric-lbl">Sales</div></div>
-                              <div className="lc-metric"><div className="lc-metric-val" style={{color:m.active_journey?'#10B981':'#9CA3AF'}} dangerouslySetInnerHTML={{__html:m.active_journey?'&#x1F7E2;':'&#x26AB;'}}/><div className="lc-metric-lbl">Journey</div></div>
+                              <div className="lc-metric"><div className="lc-metric-val" style={{color:m.active_journey?'#10B981':'#9CA3AF'}} style={{width:8,height:8,borderRadius:'50%',background:m.active_journey?'#10B981':'#9CA3AF',display:'inline-block'}}/><div className="lc-metric-lbl">Journey</div></div>
                             </div>
                             {m.last_location && (
                               <div className="lc-location">&#x1F4CD; {(m.last_location?.name||'').split(',').slice(0,2).join(', ')} &middot; {fmtTime(m.last_location?.time)}</div>
@@ -669,7 +670,7 @@ useEffect(() => {
                             <div className="mfc-kpi"><div className="mfc-kpi-val">{(m.dayVisits || []).length}</div><div className="mfc-kpi-lbl">Visits Today</div></div>
                             <div className="mfc-kpi"><div className="mfc-kpi-val">{m.dayReport ? fmt(m.dayReport.profit_achievement || 0) : ''}</div><div className="mfc-kpi-lbl">Profit</div></div>
                             <div className="mfc-kpi"><div className="mfc-kpi-val">{(m.dayProducts || []).length}</div><div className="mfc-kpi-lbl">Products</div></div>
-                            <div className="mfc-kpi"><div className="mfc-kpi-val" dangerouslySetInnerHTML={{__html:m.liveData?.active_journey?'&#x1F7E2;':'&#x26AB;'}}/><div className="mfc-kpi-lbl">Journey</div></div>
+                            <div className="mfc-kpi"><div className="mfc-kpi-val" style={{width:8,height:8,borderRadius:'50%',background:m.liveData?.active_journey?'#10B981':'#9CA3AF',display:'inline-block'}}/><div className="mfc-kpi-lbl">Journey</div></div>
                           </div>
                           {(m.dayVisits || []).length > 0 && (
                             <div className="mfc-visits-strip">
@@ -1077,13 +1078,13 @@ useEffect(() => {
                 <div>
                   <div className="kpi-bar-4" style={{marginBottom:18}}>
                     {[
-                      {ico:'&#x1F4CD;',n:analyticsData.totals.visits,    l:'Total Visits', bg:'#ECFDF5',tc:'#059669'},
-                      {ico:'&#x1F4B0;',n:fmt(analyticsData.totals.sales), l:'Total Sales',  bg:'#EFF6FF',tc:'#2563EB'},
-                      {ico:'&#x1F4C8;',n:fmt(analyticsData.totals.profit),l:'Total Profit', bg:'#F5F3FF',tc:'#7C3AED'},
-                      {ico:'&#x1F3AF;',n:analyticsData.totals.salesPct+'%',l:'Achievement',bg:'#FFFBEB',tc:'#D97706'},
+                      {ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>,n:analyticsData.totals.visits,    l:'Total Visits', bg:'#ECFDF5',tc:'#059669'},
+                      {ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>,n:fmt(analyticsData.totals.sales), l:'Total Sales',  bg:'#EFF6FF',tc:'#2563EB'},
+                      {ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>,n:fmt(analyticsData.totals.profit),l:'Total Profit', bg:'#F5F3FF',tc:'#7C3AED'},
+                      {ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>,n:analyticsData.totals.salesPct+'%',l:'Achievement',bg:'#FFFBEB',tc:'#D97706'},
                     ].map((k,i) => (
                       <div key={i} className="akpi">
-                        <div className="akpi-top"><div className="akpi-ico" style={{background:k.bg,fontSize:'1rem'}} dangerouslySetInnerHTML={{__html:k.ico}}/></div>
+                        <div className="akpi-top"><div className="akpi-ico" style={{background:k.bg}}>{k.ico}</div></div>
                         <div className="akpi-val" style={{fontSize:'1.5rem'}}>{k.n}</div>
                         <div className="akpi-lbl">{k.l}</div>
                       </div>
