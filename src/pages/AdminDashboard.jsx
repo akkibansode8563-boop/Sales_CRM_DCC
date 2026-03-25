@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import useAuthStore from '../store/authStore'
 import dccLogo from '../assets/dcc-logo.png'
+import dccLogoWhite from '../assets/dcc-logo-white.png'
 import {
     getUsers, createUser, updateUser, deleteUser, adminSetPassword,
     getAnalytics, productionReset, getDailyAlerts, shouldShowAlerts, getAlertDismissKey,

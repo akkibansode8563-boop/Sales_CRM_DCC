@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
-import dccLogo from '../assets/dcc-logo.png'
+import dccLogo from '../assets/dcc-logo-white.png'
 
 const QUOTES = [
   { text: "Every call is a chance.\nEvery visit, a victory.",   tag: "Today's Mantra",   color: '#60A5FA' },
