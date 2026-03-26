@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/authStore'
 import { authLogin } from '../utils/supabaseDB'
+import { logLoginEvent } from '../services/syncService'
 import dccLogo from '../assets/dcc-logo.png'
 import './Login.css'
 
@@ -20,8 +21,13 @@ export default function Login() {
       const r = await authLogin(form.username, form.password)
       if (r.success) {
         login({ id: r.user_id, username: r.username, role: r.role, full_name: r.full_name }, r.token)
+        // Audit log — fire and forget
+        logLoginEvent(r.user_id, r.username, r.role, 'login').catch(() => {})
         navigate(r.role === 'Admin' ? '/admin' : '/manager')
-      } else setError(r.message || 'Invalid credentials')
+      } else {
+        logLoginEvent(null, form.username, null, 'failed').catch(() => {})
+        setError(r.message || 'Invalid credentials')
+      }
     } catch { setError('Something went wrong. Please try again.') }
     finally { setLoading(false) }
   }

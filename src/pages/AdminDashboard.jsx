@@ -169,6 +169,12 @@ export default function AdminDashboard() {
     return unsub
   }, [reload])
 
+  // Cloud mode: Supabase realtime subscription for instant sync
+  useEffect(() => {
+    const unsub = startRealtimeSync(() => { setTimeout(reload, 300) })
+    return unsub
+  }, [reload])
+
   const doCreateUser = async () => {
     const cleanUsername = uf.username.trim().toLowerCase().replace(/\s+/g, '_')
     if (!cleanUsername || !uf.full_name.trim()) return toastMsg('Username & full name required', 'error')
