@@ -462,7 +462,7 @@ useEffect(() => {
           {tab==='overview' && (
             <>
               <KPIs/>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 340px',gap:18}}>
+              <div className="overview-grid-main">
                 <div className="panel">
                   <div className="panel-hdr">
                     <div className="panel-title">Performance Trends</div>
@@ -503,7 +503,7 @@ useEffect(() => {
                 </div>
               </div>
 
-              <div style={{display:'grid',gridTemplateColumns:'1fr 300px',gap:18}}>
+              <div className="overview-grid-side">
                 <div className="panel">
                   <div className="panel-hdr">
                     <div className="panel-title">Team Activity &mdash; {fmtDate(filterDate)}</div>
@@ -567,9 +567,9 @@ useEffect(() => {
                 </div>
 
                 <div className="panel">
-                  <div className="panel-hdr">
-                    <div className="panel-title">&#x1F916; AI Insights</div>
-                    <select onChange={e=>setAiMgrId(e.target.value?+e.target.value:null)} value={aiMgrId||''} style={{fontSize:'0.72rem',border:'1px solid #e5e7eb',borderRadius:6,padding:'3px 8px',background:'#f9fafb',color:'#374151',cursor:'pointer',fontWeight:600}}>
+                  <div className="panel-hdr ai-hdr">
+                    <div className="panel-title">🤖 AI Insights</div>
+                    <select onChange={e=>setAiMgrId(e.target.value?+e.target.value:null)} value={aiMgrId||''} className="ai-mgr-select">
                       <option value="">Select manager</option>
                       {salesManagers.map(m=><option key={m.id} value={m.id}>{m.full_name}</option>)}
                     </select>
@@ -581,12 +581,12 @@ useEffect(() => {
               </div>
 
               <div className="panel">
-                <div className="panel-hdr">
-                  <div className="panel-title">&#x1F534; Live Field Status</div>
-                  <div style={{display:'flex',gap:8}}>
-                    <button className="panel-action" onClick={()=>setShowReplay(true)}>&#x1F3AC; Journey Replay</button>
-                    <button className="panel-action" onClick={()=>setTab('heatmap')}>&#x1F525; Heatmap</button>
-                    <button className="panel-action" onClick={reload}>Refresh</button>
+                <div className="panel-hdr lfs-hdr">
+                  <div className="panel-title">🔴 Live Field Status</div>
+                  <div className="lfs-actions">
+                    <button className="panel-action" onClick={()=>setShowReplay(true)}>▶ Replay</button>
+                    <button className="panel-action" onClick={()=>setTab('heatmap')}>🔥 Heatmap</button>
+                    <button className="panel-action" onClick={reload}>↺ Refresh</button>
                   </div>
                 </div>
                 <div className="panel-body">
@@ -611,7 +611,12 @@ useEffect(() => {
                             <div className="lc-metrics">
                               <div className="lc-metric"><div className="lc-metric-val">{m.visits_today}</div><div className="lc-metric-lbl">Visits</div></div>
                               <div className="lc-metric"><div className="lc-metric-val" style={{color:m.today_sales>0?'#2563EB':'#9CA3AF',fontSize:'0.78rem'}}>{fmt(m.today_sales)}</div><div className="lc-metric-lbl">Sales</div></div>
-                              <div className="lc-metric"><div className="lc-metric-val" style={{color:m.active_journey?'#10B981':'#9CA3AF'}} style={{width:8,height:8,borderRadius:'50%',background:m.active_journey?'#10B981':'#9CA3AF',display:'inline-block'}}/><div className="lc-metric-lbl">Journey</div></div>
+                              <div className="lc-metric">
+                                <div className="lc-metric-val" style={{display:'flex',alignItems:'center',justifyContent:'center'}}>
+                                  <span style={{width:10,height:10,borderRadius:'50%',background:m.active_journey?'#10B981':'#9CA3AF',display:'inline-block',flexShrink:0}}/>
+                                </div>
+                                <div className="lc-metric-lbl">Journey</div>
+                              </div>
                             </div>
                             {m.last_location && (
                               <div className="lc-location">&#x1F4CD; {(m.last_location?.name||'').split(',').slice(0,2).join(', ')} &middot; {fmtTime(m.last_location?.time)}</div>
@@ -679,7 +684,12 @@ useEffect(() => {
                             <div className="mfc-kpi"><div className="mfc-kpi-val">{(m.dayVisits || []).length}</div><div className="mfc-kpi-lbl">Visits Today</div></div>
                             <div className="mfc-kpi"><div className="mfc-kpi-val">{m.dayReport ? fmt(m.dayReport.profit_achievement || 0) : ''}</div><div className="mfc-kpi-lbl">Profit</div></div>
                             <div className="mfc-kpi"><div className="mfc-kpi-val">{(m.dayProducts || []).length}</div><div className="mfc-kpi-lbl">Products</div></div>
-                            <div className="mfc-kpi"><div className="mfc-kpi-val" style={{width:8,height:8,borderRadius:'50%',background:m.liveData?.active_journey?'#10B981':'#9CA3AF',display:'inline-block'}}/><div className="mfc-kpi-lbl">Journey</div></div>
+                            <div className="mfc-kpi">
+                            <div className="mfc-kpi-val" style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:22}}>
+                              <span style={{width:10,height:10,borderRadius:'50%',background:m.liveData?.active_journey?'#10B981':'#9CA3AF',display:'inline-block'}}/>
+                            </div>
+                            <div className="mfc-kpi-lbl">Journey</div>
+                          </div>
                           </div>
                           {(m.dayVisits || []).length > 0 && (
                             <div className="mfc-visits-strip">
