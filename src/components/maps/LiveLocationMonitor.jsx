@@ -13,48 +13,53 @@ const fmtTime = iso => iso ? new Date(iso).toLocaleTimeString('en-IN',{hour:'2-d
 const fmtAgo  = iso => {
   if (!iso) return 'Never'
   const s = Math.floor((Date.now() - new Date(iso)) / 1000)
-  if (s < 60)  return s + 's ago'
+  if (s < 60)   return s + 's ago'
   if (s < 3600) return Math.floor(s/60) + 'm ago'
   return Math.floor(s/3600) + 'h ago'
 }
 
-/* ── Reverse geocode via Nominatim ── */
+/* ── Reverse geocode ── */
 const geoCache = {}
 async function reverseGeo(lat, lng) {
   const key = `${lat.toFixed(4)},${lng.toFixed(4)}`
   if (geoCache[key]) return geoCache[key]
   try {
-    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=16`,
-      { headers: { 'Accept-Language': 'en' } })
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=16`,
+      { headers: { 'Accept-Language': 'en' } }
+    )
     const d = await r.json()
-    const addr = d.address
-    const parts = [addr.road||addr.pedestrian||addr.suburb, addr.suburb||addr.neighbourhood||addr.city_district, addr.city||addr.town||addr.village].filter(Boolean)
+    const a = d.address
+    const parts = [a.road||a.pedestrian||a.suburb, a.suburb||a.neighbourhood||a.city_district, a.city||a.town||a.village].filter(Boolean)
     const label = parts.slice(0,2).join(', ') || d.display_name?.split(',').slice(0,2).join(',') || `${lat.toFixed(4)}, ${lng.toFixed(4)}`
     geoCache[key] = label
     return label
   } catch { return `${lat.toFixed(4)}, ${lng.toFixed(4)}` }
 }
 
-/* ── Map sub-component ── */
+/* ── Leaflet map ── */
 const LiveMap = memo(function LiveMap({ managers, selectedId, onSelectManager }) {
-  const mapRef        = useRef(null)
-  const mapInstance   = useRef(null)
-  const markersRef    = useRef({})
-  const pathsRef      = useRef({})
-  const initDone      = useRef(false)
+  const mapRef      = useRef(null)
+  const mapInstance = useRef(null)
+  const markersRef  = useRef({})
+  const pathsRef    = useRef({})
+  const initDone    = useRef(false)
 
-  /* Init map once */
   useEffect(() => {
     if (initDone.current || !mapRef.current) return
     initDone.current = true
     import('leaflet').then(L => {
       delete L.Icon.Default.prototype._getIconUrl
       const map = L.map(mapRef.current, {
-        center: [19.076, 72.8777], zoom: 12,
-        zoomControl: true, scrollWheelZoom: true
+        center: [19.076, 72.8777], zoom: 11,
+        zoomControl: false,
+        scrollWheelZoom: true,
+        tap: true,
       })
+      // Add zoom control bottom-right (away from top-left sidebar area)
+      L.control.zoom({ position: 'bottomright' }).addTo(map)
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap', maxZoom: 19
+        attribution: '© OSM', maxZoom: 19
       }).addTo(map)
       mapInstance.current = { map, L }
     })
@@ -63,7 +68,6 @@ const LiveMap = memo(function LiveMap({ managers, selectedId, onSelectManager })
     }
   }, [])
 
-  /* Update markers whenever managers change */
   useEffect(() => {
     if (!mapInstance.current) return
     const { map, L } = mapInstance.current
@@ -76,36 +80,41 @@ const LiveMap = memo(function LiveMap({ managers, selectedId, onSelectManager })
       if (isNaN(lat) || isNaN(lng)) return
 
       seen.add(m.id)
-      const sm     = STATUS_META[m.status] || STATUS_META['In-Office']
-      const color  = AVATAR_COLORS[idx % AVATAR_COLORS.length]
+      const color = AVATAR_COLORS[idx % AVATAR_COLORS.length]
       const isSelected = m.id === selectedId
-      const pulse  = m.active_journey ? `<span style="position:absolute;top:-3px;right:-3px;width:11px;height:11px;background:#10B981;border-radius:50%;border:2px solid #fff;animation:livepulse 1.2s infinite;"></span>` : ''
-      const ring   = isSelected ? `box-shadow:0 0 0 4px ${color}55,0 4px 16px rgba(0,0,0,0.3);` : 'box-shadow:0 2px 8px rgba(0,0,0,0.25);'
-      const size   = isSelected ? 46 : 38
+      const size = isSelected ? 44 : 36
+      const pulse = m.active_journey
+        ? `<span style="position:absolute;top:-3px;right:-3px;width:10px;height:10px;background:#10B981;border-radius:50%;border:2px solid #fff;animation:llm-pulse 1.2s infinite;"></span>`
+        : ''
+      const ring = isSelected
+        ? `box-shadow:0 0 0 4px ${color}55,0 6px 18px rgba(0,0,0,0.3);`
+        : 'box-shadow:0 2px 10px rgba(0,0,0,0.22);'
 
       const icon = L.divIcon({
         className: '',
-        html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:3px solid #fff;${ring}display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:${isSelected?16:13}px;position:relative;cursor:pointer;transition:all 0.2s;">${(m.name||'?')[0].toUpperCase()}${pulse}</div>`,
-        iconSize: [size, size], iconAnchor: [size/2, size], popupAnchor: [0, -size]
+        html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:3px solid #fff;${ring}display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:${isSelected?15:12}px;position:relative;cursor:pointer;transition:all 0.2s;">${(m.name||'?')[0].toUpperCase()}${pulse}</div>`,
+        iconSize: [size, size],
+        iconAnchor: [size/2, size],
+        popupAnchor: [0, -(size+4)],
       })
 
+      const sm = STATUS_META[m.status] || STATUS_META['In-Office']
       const popupHtml = `
-        <div style="min-width:200px;font-family:system-ui,sans-serif;padding:2px">
+        <div style="min-width:190px;font-family:system-ui,sans-serif;padding:2px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <div style="width:32px;height:32px;border-radius:50%;background:${color};color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">${(m.name||'?')[0]}</div>
+            <div style="width:30px;height:30px;border-radius:50%;background:${color};color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">${(m.name||'?')[0]}</div>
             <div>
-              <div style="font-weight:800;font-size:0.9rem;color:#111827">${m.name}</div>
-              <div style="font-size:0.7rem;color:#6B7280">${m.territory||'No territory'}</div>
+              <div style="font-weight:800;font-size:0.88rem;color:#111827">${m.name}</div>
+              <div style="font-size:0.68rem;color:#6B7280">${m.territory||'No territory'}</div>
             </div>
           </div>
-          <div style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:99px;font-size:0.68rem;font-weight:700;background:${sm.bg};color:${sm.color};margin-bottom:8px">
-            <span style="width:6px;height:6px;border-radius:50%;background:${sm.dot};display:inline-block"></span>${m.status}
+          <div style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;font-size:0.65rem;font-weight:700;background:${sm.bg};color:${sm.color};margin-bottom:8px">
+            <span style="width:5px;height:5px;border-radius:50%;background:${sm.dot};display:inline-block"></span>${m.status}
           </div>
-          <div style="font-size:0.72rem;color:#374151;background:#F9FAFB;padding:8px;border-radius:6px">
-            <div>📍 <strong>GPS:</strong> ${lat.toFixed(5)}, ${lng.toFixed(5)}</div>
-            <div>🕐 <strong>Updated:</strong> ${fmtTime(gps.time)}</div>
-            <div>👣 <strong>Visits today:</strong> ${m.visits_today||0}</div>
-            <div>💰 <strong>Sales:</strong> ₹${Number(m.today_sales||0).toLocaleString('en-IN')}</div>
+          <div style="font-size:0.7rem;color:#374151;background:#F9FAFB;padding:7px 9px;border-radius:7px">
+            <div>📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}</div>
+            <div>🕐 ${fmtTime(gps.time)}</div>
+            <div>👣 Visits: ${m.visits_today||0} · ₹${Number(m.today_sales||0).toLocaleString('en-IN')}</div>
             ${m.active_journey ? '<div style="margin-top:4px;color:#10B981;font-weight:700">🟢 Journey Active</div>' : ''}
           </div>
         </div>`
@@ -115,25 +124,24 @@ const LiveMap = memo(function LiveMap({ managers, selectedId, onSelectManager })
       } else {
         const marker = L.marker([lat, lng], { icon })
           .addTo(map)
-          .bindPopup(popupHtml, { maxWidth: 240 })
+          .bindPopup(popupHtml, { maxWidth: 230, autoPan: true })
           .on('click', () => onSelectManager(m.id))
         markersRef.current[m.id] = marker
       }
 
-      // Draw GPS trail for selected manager
+      // GPS trail for selected
       if (m.id === selectedId && m.gps_trail?.length > 1) {
         if (pathsRef.current[m.id]) pathsRef.current[m.id].remove()
-        const pts = m.gps_trail.map(p => [p.lat, p.lng])
-        pathsRef.current[m.id] = L.polyline(pts, {
-          color: color, weight: 3, opacity: 0.65, dashArray: '6,4'
-        }).addTo(map)
+        pathsRef.current[m.id] = L.polyline(
+          m.gps_trail.map(p => [p.lat, p.lng]),
+          { color, weight: 3, opacity: 0.6, dashArray: '6,4' }
+        ).addTo(map)
       } else if (pathsRef.current[m.id] && m.id !== selectedId) {
         pathsRef.current[m.id].remove()
         delete pathsRef.current[m.id]
       }
     })
 
-    // Remove markers for managers no longer in list
     Object.keys(markersRef.current).forEach(id => {
       if (!seen.has(Number(id))) {
         markersRef.current[id].remove()
@@ -142,7 +150,6 @@ const LiveMap = memo(function LiveMap({ managers, selectedId, onSelectManager })
     })
   }, [managers, selectedId, onSelectManager])
 
-  /* Pan to selected manager */
   useEffect(() => {
     if (!mapInstance.current || !selectedId) return
     const m = managers.find(x => x.id === selectedId)
@@ -155,83 +162,137 @@ const LiveMap = memo(function LiveMap({ managers, selectedId, onSelectManager })
   }, [selectedId, managers])
 
   return (
-    <div style={{position:'relative',height:'100%'}}>
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
       <style>{`
-        @keyframes livepulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:0.6}}
-        .leaflet-popup-content-wrapper{border-radius:12px!important;box-shadow:0 8px 32px rgba(0,0,0,0.15)!important}
-        .leaflet-popup-content{margin:12px!important}
+        @keyframes llm-pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.5);opacity:0.5}}
+        .leaflet-popup-content-wrapper{border-radius:12px!important;box-shadow:0 8px 28px rgba(0,0,0,0.14)!important}
+        .leaflet-popup-content{margin:12px 14px!important;font-family:system-ui,sans-serif}
+        .leaflet-control-zoom{border-radius:10px!important;overflow:hidden;border:none!important;box-shadow:0 2px 10px rgba(0,0,0,0.15)!important}
+        .leaflet-control-zoom a{font-size:16px!important;width:34px!important;height:34px!important;line-height:34px!important;color:#374151!important}
       `}</style>
-      <div ref={mapRef} style={{width:'100%',height:'100%',borderRadius:'0 0 0 12px'}}/>
-      {managers.filter(m=>m.last_gps?.lat).length === 0 && (
-        <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:10,background:'rgba(249,250,251,0.92)',borderRadius:12,zIndex:10}}>
-          <div style={{fontSize:'2.5rem'}}>🛰️</div>
-          <div style={{fontWeight:800,fontSize:'0.95rem',color:'#374151'}}>No GPS data yet</div>
-          <div style={{fontSize:'0.78rem',color:'#9CA3AF',textAlign:'center',maxWidth:220}}>Managers appear on map when they start a journey or log a visit with GPS enabled</div>
+      <div ref={mapRef} style={{ width: '100%', height: '100%' }}/>
+      {managers.filter(m => m.last_gps?.lat).length === 0 && (
+        <div style={{
+          position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 10,
+          background: 'rgba(249,250,251,0.94)', zIndex: 10,
+        }}>
+          <div style={{ fontSize: '2.5rem' }}>🛰️</div>
+          <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#374151' }}>No GPS data yet</div>
+          <div style={{ fontSize: '0.75rem', color: '#9CA3AF', textAlign: 'center', maxWidth: 220, lineHeight: 1.5 }}>
+            Managers appear when they start a journey with GPS enabled
+          </div>
         </div>
       )}
     </div>
   )
 })
 
-/* ── Manager sidebar card ── */
+/* ── Manager list card (compact for mobile) ── */
 function ManagerCard({ m, idx, isSelected, onClick, address }) {
   const sm = STATUS_META[m.status] || STATUS_META['In-Office']
   const hasGPS = !!m.last_gps?.lat
+  const color  = AVATAR_COLORS[idx % AVATAR_COLORS.length]
+
   return (
     <div onClick={onClick} style={{
-      padding:'12px 14px', cursor:'pointer', borderBottom:'1px solid #F3F4F6',
-      background: isSelected ? '#EFF6FF' : 'transparent',
-      borderLeft: isSelected ? '3px solid #2563EB' : '3px solid transparent',
-      transition:'all 0.15s'
+      padding: '10px 12px', cursor: 'pointer',
+      borderBottom: '1px solid #F3F4F6',
+      background: isSelected ? '#EFF6FF' : '#fff',
+      borderLeft: `3px solid ${isSelected ? '#2563EB' : 'transparent'}`,
+      transition: 'all 0.12s',
     }}>
-      <div style={{display:'flex',alignItems:'center',gap:10}}>
-        <div style={{width:36,height:36,borderRadius:10,background:AVATAR_COLORS[idx%AVATAR_COLORS.length],color:'#fff',fontWeight:800,fontSize:'0.9rem',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,position:'relative'}}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        {/* Avatar */}
+        <div style={{
+          width: 34, height: 34, borderRadius: 9,
+          background: color, color: '#fff',
+          fontWeight: 800, fontSize: '0.85rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0, position: 'relative',
+        }}>
           {(m.name||'?')[0]}
-          {m.active_journey && <span style={{position:'absolute',top:-2,right:-2,width:9,height:9,background:'#10B981',borderRadius:'50%',border:'2px solid #fff'}}/>}
+          {m.active_journey && (
+            <span style={{
+              position: 'absolute', top: -2, right: -2,
+              width: 9, height: 9, background: '#10B981',
+              borderRadius: '50%', border: '2px solid #fff',
+              animation: 'llm-pulse 1.4s infinite',
+            }}/>
+          )}
         </div>
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{fontWeight:700,fontSize:'0.83rem',color:'#111827',display:'flex',alignItems:'center',gap:6}}>
+
+        {/* Name + territory */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontWeight: 700, fontSize: '0.82rem', color: '#111827',
+            display: 'flex', alignItems: 'center', gap: 5,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
             {m.name}
-            {hasGPS && <span style={{fontSize:'0.6rem',background:'#ECFDF5',color:'#059669',padding:'1px 5px',borderRadius:99,fontWeight:700}}>GPS</span>}
+            {hasGPS && (
+              <span style={{ fontSize: '0.55rem', background: '#ECFDF5', color: '#059669', padding: '1px 5px', borderRadius: 99, fontWeight: 800, flexShrink: 0 }}>GPS</span>
+            )}
           </div>
-          <div style={{fontSize:'0.68rem',color:'#9CA3AF',marginTop:1}}>{m.territory||'No territory'}</div>
+          <div style={{ fontSize: '0.63rem', color: '#9CA3AF', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {m.territory || 'No territory'}
+          </div>
         </div>
-        <div style={{display:'flex',alignItems:'center',gap:4,padding:'3px 8px',borderRadius:99,background:sm.bg,color:sm.color,fontSize:'0.63rem',fontWeight:700,flexShrink:0}}>
-          <span style={{width:5,height:5,borderRadius:'50%',background:sm.dot,display:'inline-block'}}/>
+
+        {/* Status badge */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 4,
+          padding: '3px 7px', borderRadius: 99,
+          background: sm.bg, color: sm.color,
+          fontSize: '0.6rem', fontWeight: 700, flexShrink: 0,
+        }}>
+          <span style={{ width: 5, height: 5, borderRadius: '50%', background: sm.dot, display: 'inline-block' }}/>
           {m.status}
         </div>
       </div>
 
+      {/* Expanded detail — shows when selected */}
       {isSelected && (
-        <div style={{marginTop:10,padding:'8px 10px',background:'#fff',borderRadius:8,border:'1px solid #E5E7EB'}}>
+        <div style={{
+          marginTop: 9, padding: '9px 10px',
+          background: '#F8FAFF', borderRadius: 8, border: '1px solid #DBEAFE',
+        }}>
           {hasGPS ? (
             <>
-              <div style={{fontSize:'0.7rem',color:'#374151',marginBottom:4,display:'flex',alignItems:'flex-start',gap:5}}>
-                <span>📍</span>
-                <span style={{flex:1}}>{address || `${m.last_gps.lat.toFixed(5)}, ${m.last_gps.lng.toFixed(5)}`}</span>
+              <div style={{ fontSize: '0.68rem', color: '#374151', display: 'flex', alignItems: 'flex-start', gap: 5, marginBottom: 6 }}>
+                <span style={{ flexShrink: 0 }}>📍</span>
+                <div>
+                  <div style={{ fontWeight: 600, color: '#1D4ED8' }}>{address || 'Loading address…'}</div>
+                  <div style={{ fontSize: '0.6rem', color: '#9CA3AF', marginTop: 2 }}>
+                    {m.last_gps.lat?.toFixed(5)}, {m.last_gps.lng?.toFixed(5)}
+                  </div>
+                </div>
               </div>
-              <div style={{fontSize:'0.68rem',color:'#9CA3AF',display:'flex',gap:12}}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 5 }}>
+                {[
+                  { label: 'VISITS', val: m.visits_today||0, color: '#111827' },
+                  { label: 'SALES', val: '₹'+Number(m.today_sales||0).toLocaleString('en-IN'), color: '#2563EB', small: true },
+                  { label: 'JOURNEY', val: m.active_journey ? 'Active' : 'Idle', color: m.active_journey ? '#059669' : '#9CA3AF' },
+                ].map(k => (
+                  <div key={k.label} style={{ background: '#fff', borderRadius: 6, padding: '5px 6px', textAlign: 'center', border: '1px solid #E5E7EB' }}>
+                    <div style={{ fontWeight: 800, fontSize: k.small ? '0.65rem' : '0.82rem', color: k.color, lineHeight: 1.2 }}>{k.val}</div>
+                    <div style={{ fontSize: '0.55rem', color: '#9CA3AF', fontWeight: 700, marginTop: 2 }}>{k.label}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: '0.62rem', color: '#9CA3AF' }}>
                 <span>🕐 {fmtTime(m.last_gps.time)}</span>
-                <span style={{color:Date.now()-new Date(m.last_gps.time)<120000?'#10B981':'#F59E0B'}}>⏱ {fmtAgo(m.last_gps.time)}</span>
+                <span style={{ color: Date.now()-new Date(m.last_gps.time) < 120000 ? '#10B981' : '#F59E0B', fontWeight: 700 }}>
+                  {fmtAgo(m.last_gps.time)}
+                </span>
               </div>
-              {m.last_gps.speed > 0 && <div style={{fontSize:'0.68rem',color:'#6B7280',marginTop:2}}>🚗 {m.last_gps.speed.toFixed(1)} km/h</div>}
             </>
           ) : (
-            <div style={{fontSize:'0.72rem',color:'#9CA3AF',display:'flex',alignItems:'center',gap:5}}>
-              <span>⚫</span> No GPS data — waiting for journey or visit
+            <div style={{ fontSize: '0.7rem', color: '#9CA3AF', textAlign: 'center', padding: 6 }}>
+              ⚫ No GPS data yet
             </div>
           )}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginTop:8}}>
-            <div style={{background:'#F9FAFB',borderRadius:6,padding:'5px 8px',textAlign:'center'}}>
-              <div style={{fontWeight:700,fontSize:'0.9rem',color:'#111827'}}>{m.visits_today||0}</div>
-              <div style={{fontSize:'0.58rem',color:'#9CA3AF',fontWeight:600}}>VISITS</div>
-            </div>
-            <div style={{background:'#F9FAFB',borderRadius:6,padding:'5px 8px',textAlign:'center'}}>
-              <div style={{fontWeight:700,fontSize:'0.72rem',color:'#2563EB'}}>₹{Number(m.today_sales||0).toLocaleString('en-IN')}</div>
-              <div style={{fontSize:'0.58rem',color:'#9CA3AF',fontWeight:600}}>SALES</div>
-            </div>
-          </div>
         </div>
       )}
     </div>
@@ -240,15 +301,17 @@ function ManagerCard({ m, idx, isSelected, onClick, address }) {
 
 /* ── Main export ── */
 export default function LiveLocationMonitor({ managers = [], salesManagers = [], onRefresh }) {
-  const [selectedId,    setSelectedId]    = useState(null)
-  const [filterMgr,     setFilterMgr]     = useState('all')   // 'all' or manager id
-  const [autoRefresh,   setAutoRefresh]   = useState(true)
-  const [countdown,     setCountdown]     = useState(30)
-  const [addresses,     setAddresses]     = useState({})       // id -> address string
-  const [lastRefresh,   setLastRefresh]   = useState(new Date())
+  const [selectedId,  setSelectedId]  = useState(null)
+  const [filterMgr,   setFilterMgr]   = useState('all')
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  const [countdown,   setCountdown]   = useState(30)
+  const [addresses,   setAddresses]   = useState({})
+  const [lastRefresh, setLastRefresh] = useState(new Date())
+  // Mobile: list panel can be open/closed
+  const [listOpen,    setListOpen]    = useState(false)
   const timerRef = useRef(null)
 
-  /* Auto-refresh every 30s */
+  /* Auto-refresh */
   useEffect(() => {
     if (!autoRefresh) { clearInterval(timerRef.current); return }
     timerRef.current = setInterval(() => {
@@ -260,161 +323,288 @@ export default function LiveLocationMonitor({ managers = [], salesManagers = [],
     return () => clearInterval(timerRef.current)
   }, [autoRefresh, onRefresh])
 
-  /* Fetch addresses for managers with GPS */
+  /* Reverse geocode GPS positions */
   useEffect(() => {
     managers.forEach(m => {
       if (!m.last_gps?.lat || addresses[m.id]) return
-      reverseGeo(m.last_gps.lat, m.last_gps.lng).then(addr => {
+      reverseGeo(m.last_gps.lat, m.last_gps.lng).then(addr =>
         setAddresses(prev => ({ ...prev, [m.id]: addr }))
-      })
+      )
     })
   }, [managers])
 
-  /* Filter managers */
-  const displayManagers = filterMgr === 'all'
-    ? managers
-    : managers.filter(m => m.id === Number(filterMgr))
-
+  const displayManagers = filterMgr === 'all' ? managers : managers.filter(m => m.id === Number(filterMgr))
   const gpsCount    = managers.filter(m => m.last_gps?.lat).length
   const activeCount = managers.filter(m => m.active_journey).length
   const selectedMgr = managers.find(m => m.id === selectedId)
   const selectedIdx = managers.findIndex(m => m.id === selectedId)
 
-  const handleManualRefresh = () => {
-    onRefresh?.()
-    setLastRefresh(new Date())
-    setCountdown(30)
-  }
+  const handleManualRefresh = () => { onRefresh?.(); setLastRefresh(new Date()); setCountdown(30) }
+  const handleSelectMgr = id => setSelectedId(prev => prev === id ? null : id)
 
   return (
-    <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, position: 'relative' }}>
 
-      {/* ── Top controls bar ── */}
-      <div style={{padding:'12px 16px',background:'#fff',borderBottom:'1px solid #E5E7EB',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-
-        {/* Status chips */}
-        <div style={{display:'flex',gap:6,flex:1}}>
-          <span style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',borderRadius:99,background:'#ECFDF5',color:'#059669',fontSize:'0.72rem',fontWeight:700}}>
-            <span style={{width:7,height:7,borderRadius:'50%',background:'#10B981',display:'inline-block',animation:'livepulse 1.2s infinite'}}/>
-            {activeCount} Active Journey{activeCount!==1?'s':''}
-          </span>
-          <span style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',borderRadius:99,background:'#EFF6FF',color:'#2563EB',fontSize:'0.72rem',fontWeight:700}}>
-            🛰️ {gpsCount} GPS Signal{gpsCount!==1?'s':''}
-          </span>
-          <span style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',borderRadius:99,background:'#F5F3FF',color:'#7C3AED',fontSize:'0.72rem',fontWeight:700}}>
-            👥 {managers.length} Manager{managers.length!==1?'s':''}
-          </span>
+      {/* ── Top control bar ── */}
+      <div style={{
+        padding: '10px 12px',
+        background: '#fff',
+        borderBottom: '1px solid #E5E7EB',
+        display: 'flex', alignItems: 'center',
+        flexWrap: 'wrap', gap: 8,
+        flexShrink: 0,
+      }}>
+        {/* Live stats row */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
+          <StatChip color="#10B981" bg="#ECFDF5" pulse>
+            {activeCount} Active
+          </StatChip>
+          <StatChip color="#2563EB" bg="#EFF6FF">
+            🛰️ {gpsCount} GPS
+          </StatChip>
+          <StatChip color="#7C3AED" bg="#F5F3FF">
+            👥 {managers.length}
+          </StatChip>
         </div>
 
-        {/* Manager filter */}
-        <select value={filterMgr} onChange={e=>{setFilterMgr(e.target.value); setSelectedId(e.target.value==='all'?null:Number(e.target.value))}}
-          style={{padding:'5px 10px',borderRadius:8,border:'1.5px solid #E5E7EB',fontSize:'0.78rem',fontWeight:600,color:'#374151',background:'#F9FAFB',cursor:'pointer'}}>
-          <option value="all">All Managers</option>
-          {salesManagers.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}
-        </select>
+        {/* Controls row */}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Manager filter */}
+          <select
+            value={filterMgr}
+            onChange={e => { setFilterMgr(e.target.value); setSelectedId(e.target.value === 'all' ? null : Number(e.target.value)) }}
+            style={{
+              padding: '5px 8px', borderRadius: 8,
+              border: '1.5px solid #E5E7EB',
+              fontSize: '0.72rem', fontWeight: 600,
+              color: '#374151', background: '#F9FAFB', cursor: 'pointer',
+              maxWidth: 140,
+            }}
+          >
+            <option value="all">All Managers</option>
+            {salesManagers.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+          </select>
 
-        {/* Auto-refresh toggle */}
-        <button onClick={()=>setAutoRefresh(a=>!a)} style={{
-          padding:'5px 12px',borderRadius:8,border:'1.5px solid',fontWeight:700,fontSize:'0.72rem',cursor:'pointer',
-          background:autoRefresh?'#ECFDF5':'#F9FAFB',
-          color:autoRefresh?'#059669':'#6B7280',
-          borderColor:autoRefresh?'#6EE7B7':'#E5E7EB'
-        }}>
-          {autoRefresh ? `⏱ ${countdown}s` : '▶ Auto'}
-        </button>
+          {/* Auto-refresh */}
+          <button onClick={() => setAutoRefresh(a => !a)} style={{
+            padding: '5px 10px', borderRadius: 8, border: '1.5px solid',
+            fontWeight: 700, fontSize: '0.7rem', cursor: 'pointer',
+            background: autoRefresh ? '#ECFDF5' : '#F9FAFB',
+            color:      autoRefresh ? '#059669' : '#6B7280',
+            borderColor:autoRefresh ? '#6EE7B7' : '#E5E7EB',
+            whiteSpace: 'nowrap',
+          }}>
+            {autoRefresh ? `⏱ ${countdown}s` : '▶ Auto'}
+          </button>
 
-        {/* Manual refresh */}
-        <button onClick={handleManualRefresh} style={{padding:'5px 12px',borderRadius:8,border:'1.5px solid #E5E7EB',fontWeight:700,fontSize:'0.72rem',cursor:'pointer',background:'#fff',color:'#374151',display:'flex',alignItems:'center',gap:5}}>
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M11 6.5A4.5 4.5 0 102.5 4M2 2v2.5H4.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          Refresh
-        </button>
+          {/* Manual refresh */}
+          <button onClick={handleManualRefresh} style={{
+            padding: '5px 10px', borderRadius: 8,
+            border: '1.5px solid #E5E7EB',
+            fontWeight: 700, fontSize: '0.7rem',
+            cursor: 'pointer', background: '#fff', color: '#374151',
+            display: 'flex', alignItems: 'center', gap: 4,
+          }}>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M10.5 6A4.5 4.5 0 102.5 3.5M2 2v2h2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            Sync
+          </button>
 
-        <span style={{fontSize:'0.65rem',color:'#9CA3AF'}}>Updated {fmtTime(lastRefresh.toISOString())}</span>
+          {/* Mobile: toggle manager list */}
+          <button onClick={() => setListOpen(o => !o)} style={{
+            padding: '5px 10px', borderRadius: 8,
+            border: '1.5px solid #E5E7EB',
+            fontWeight: 700, fontSize: '0.7rem',
+            cursor: 'pointer',
+            background: listOpen ? '#EFF6FF' : '#F9FAFB',
+            color:      listOpen ? '#2563EB' : '#374151',
+            display: 'flex', alignItems: 'center', gap: 4,
+            whiteSpace: 'nowrap',
+          }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+            </svg>
+            {listOpen ? 'Hide' : 'Field Status'}
+          </button>
+        </div>
+
+        {/* Timestamp */}
+        <div style={{ width: '100%', fontSize: '0.58rem', color: '#9CA3AF', textAlign: 'right', marginTop: -2 }}>
+          Updated {fmtTime(lastRefresh.toISOString())}
+        </div>
       </div>
 
-      {/* ── Main content: map + sidebar ── */}
-      <div style={{display:'flex',flex:1,minHeight:0,overflow:'hidden'}}>
+      {/* ── Body: map fills full height, list slides over it on mobile ── */}
+      <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex' }}>
 
-        {/* Manager list sidebar */}
-        <div style={{width:280,flexShrink:0,overflowY:'auto',borderRight:'1px solid #E5E7EB',background:'#FAFAFA'}}>
-          <div style={{padding:'10px 14px',fontSize:'0.7rem',fontWeight:800,color:'#9CA3AF',textTransform:'uppercase',letterSpacing:'0.08em',borderBottom:'1px solid #F3F4F6',background:'#fff'}}>
-            Field Status
-          </div>
-          {displayManagers.length === 0 && (
-            <div style={{padding:'32px 16px',textAlign:'center',color:'#9CA3AF',fontSize:'0.8rem'}}>
-              No managers found
-            </div>
-          )}
-          {displayManagers.map((m, i) => (
-            <ManagerCard key={m.id} m={m} idx={managers.findIndex(x=>x.id===m.id)}
-              isSelected={selectedId===m.id}
-              onClick={()=>setSelectedId(selectedId===m.id?null:m.id)}
-              address={addresses[m.id]}
-            />
-          ))}
-        </div>
-
-        {/* Map */}
-        <div style={{flex:1,minWidth:0,position:'relative'}}>
+        {/* MAP — always full width/height */}
+        <div style={{ position: 'absolute', inset: 0 }}>
           <LiveMap
             managers={displayManagers}
             selectedId={selectedId}
-            onSelectManager={id=>setSelectedId(selectedId===id?null:id)}
+            onSelectManager={handleSelectMgr}
           />
-
-          {/* Selected manager info overlay */}
-          {selectedMgr && (
-            <div style={{position:'absolute',bottom:16,left:16,right:16,maxWidth:340,background:'rgba(255,255,255,0.97)',backdropFilter:'blur(8px)',borderRadius:12,boxShadow:'0 4px 24px rgba(0,0,0,0.15)',padding:'14px 16px',zIndex:1000,border:'1px solid #E5E7EB'}}>
-              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-                <div style={{width:40,height:40,borderRadius:12,background:AVATAR_COLORS[selectedIdx%AVATAR_COLORS.length],color:'#fff',fontWeight:800,fontSize:'1rem',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                  {(selectedMgr.name||'?')[0]}
-                </div>
-                <div style={{flex:1}}>
-                  <div style={{fontWeight:800,fontSize:'0.9rem',color:'#111827'}}>{selectedMgr.name}</div>
-                  <div style={{fontSize:'0.7rem',color:'#9CA3AF'}}>{selectedMgr.territory}</div>
-                </div>
-                <button onClick={()=>setSelectedId(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#9CA3AF',fontSize:'1.2rem',lineHeight:1}}>×</button>
-              </div>
-              {selectedMgr.last_gps?.lat ? (
-                <div style={{fontSize:'0.75rem',color:'#374151'}}>
-                  <div style={{display:'flex',alignItems:'flex-start',gap:6,marginBottom:5,padding:'8px 10px',background:'#F0FDF4',borderRadius:8}}>
-                    <span style={{flexShrink:0}}>📍</span>
-                    <div>
-                      <div style={{fontWeight:700,color:'#059669',marginBottom:2}}>Current Location</div>
-                      <div style={{color:'#374151'}}>{addresses[selectedMgr.id] || 'Loading address...'}</div>
-                      <div style={{color:'#9CA3AF',marginTop:3,fontFamily:'monospace',fontSize:'0.68rem'}}>
-                        {selectedMgr.last_gps.lat.toFixed(6)}, {selectedMgr.last_gps.lng.toFixed(6)}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}}>
-                    <div style={{background:'#F9FAFB',borderRadius:7,padding:'6px',textAlign:'center'}}>
-                      <div style={{fontWeight:700,fontSize:'0.85rem',color:'#111827'}}>{selectedMgr.visits_today||0}</div>
-                      <div style={{fontSize:'0.6rem',color:'#9CA3AF',fontWeight:600}}>VISITS</div>
-                    </div>
-                    <div style={{background:'#F9FAFB',borderRadius:7,padding:'6px',textAlign:'center'}}>
-                      <div style={{fontWeight:700,fontSize:'0.7rem',color:'#2563EB'}}>₹{Number(selectedMgr.today_sales||0).toLocaleString('en-IN')}</div>
-                      <div style={{fontSize:'0.6rem',color:'#9CA3AF',fontWeight:600}}>SALES</div>
-                    </div>
-                    <div style={{background:'#F9FAFB',borderRadius:7,padding:'6px',textAlign:'center'}}>
-                      <div style={{fontWeight:700,fontSize:'0.7rem',color:selectedMgr.active_journey?'#10B981':'#9CA3AF'}}>{selectedMgr.active_journey?'Active':'Idle'}</div>
-                      <div style={{fontSize:'0.6rem',color:'#9CA3AF',fontWeight:600}}>JOURNEY</div>
-                    </div>
-                  </div>
-                  <div style={{marginTop:8,display:'flex',justifyContent:'space-between',fontSize:'0.65rem',color:'#9CA3AF'}}>
-                    <span>🕐 Last GPS: {fmtTime(selectedMgr.last_gps.time)}</span>
-                    <span style={{color:Date.now()-new Date(selectedMgr.last_gps.time)<120000?'#10B981':'#F59E0B',fontWeight:700}}>{fmtAgo(selectedMgr.last_gps.time)}</span>
-                  </div>
-                </div>
-              ) : (
-                <div style={{textAlign:'center',padding:'12px',color:'#9CA3AF',fontSize:'0.8rem'}}>
-                  ⚫ No GPS data available yet
-                </div>
-              )}
-            </div>
-          )}
         </div>
+
+        {/* MANAGER LIST — slides in from left, overlays map on mobile */}
+        {listOpen && (
+          <div style={{
+            position: 'absolute', top: 0, left: 0, bottom: 0,
+            width: '100%', maxWidth: 300,
+            background: '#fff',
+            borderRight: '1px solid #E5E7EB',
+            display: 'flex', flexDirection: 'column',
+            zIndex: 500,
+            boxShadow: '4px 0 20px rgba(0,0,0,0.1)',
+            borderRadius: '0 0 0 0',
+          }}>
+            {/* List header */}
+            <div style={{
+              padding: '10px 12px', borderBottom: '1px solid #F3F4F6',
+              background: '#F9FAFB', display: 'flex', alignItems: 'center',
+              justifyContent: 'space-between', flexShrink: 0,
+            }}>
+              <div style={{ fontSize: '0.65rem', fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Field Status · {displayManagers.length}
+              </div>
+              <button onClick={() => setListOpen(false)} style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: '#9CA3AF', fontSize: '1rem', lineHeight: 1, padding: 4,
+              }}>✕</button>
+            </div>
+
+            {/* Manager cards */}
+            <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              {displayManagers.length === 0 ? (
+                <div style={{ padding: '28px 16px', textAlign: 'center', color: '#9CA3AF', fontSize: '0.8rem' }}>
+                  No managers found
+                </div>
+              ) : displayManagers.map((m, i) => (
+                <ManagerCard
+                  key={m.id}
+                  m={m}
+                  idx={managers.findIndex(x => x.id === m.id)}
+                  isSelected={selectedId === m.id}
+                  onClick={() => { handleSelectMgr(m.id); if (window.innerWidth < 640) setListOpen(false) }}
+                  address={addresses[m.id]}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* SELECTED MANAGER card — bottom of map, no overlap with list */}
+        {selectedMgr && !listOpen && (
+          <div style={{
+            position: 'absolute',
+            bottom: 12, left: 12, right: 12,
+            maxWidth: 360,
+            margin: '0 auto',
+            background: 'rgba(255,255,255,0.97)',
+            backdropFilter: 'blur(8px)',
+            borderRadius: 14,
+            boxShadow: '0 6px 28px rgba(0,0,0,0.15)',
+            padding: '12px 14px',
+            zIndex: 400,
+            border: '1px solid #E5E7EB',
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
+              <div style={{
+                width: 38, height: 38, borderRadius: 10,
+                background: AVATAR_COLORS[selectedIdx % AVATAR_COLORS.length],
+                color: '#fff', fontWeight: 800, fontSize: '1rem',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}>
+                {(selectedMgr.name||'?')[0]}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedMgr.name}</div>
+                <div style={{ fontSize: '0.67rem', color: '#9CA3AF' }}>{selectedMgr.territory || 'No territory'}</div>
+              </div>
+              <button onClick={() => setSelectedId(null)} style={{
+                background: '#F3F4F6', border: 'none', borderRadius: '50%',
+                width: 26, height: 26, cursor: 'pointer', color: '#6B7280',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '0.85rem', flexShrink: 0,
+              }}>✕</button>
+            </div>
+
+            {selectedMgr.last_gps?.lat ? (
+              <>
+                {/* Location */}
+                <div style={{
+                  background: '#F0FDF4', borderRadius: 8, padding: '7px 10px',
+                  fontSize: '0.7rem', color: '#374151', marginBottom: 9,
+                  display: 'flex', gap: 6,
+                }}>
+                  <span style={{ flexShrink: 0 }}>📍</span>
+                  <div>
+                    <div style={{ fontWeight: 700, color: '#059669' }}>{addresses[selectedMgr.id] || 'Locating…'}</div>
+                    <div style={{ fontSize: '0.6rem', color: '#9CA3AF', fontFamily: 'monospace', marginTop: 2 }}>
+                      {selectedMgr.last_gps.lat.toFixed(6)}, {selectedMgr.last_gps.lng.toFixed(6)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Metrics */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
+                  {[
+                    { label: 'VISITS', val: selectedMgr.visits_today||0, c: '#111827' },
+                    { label: 'SALES', val: '₹'+Number(selectedMgr.today_sales||0).toLocaleString('en-IN'), c: '#2563EB', sm: true },
+                    { label: 'JOURNEY', val: selectedMgr.active_journey?'Active':'Idle', c: selectedMgr.active_journey?'#059669':'#9CA3AF' },
+                  ].map(k => (
+                    <div key={k.label} style={{ background: '#F9FAFB', borderRadius: 7, padding: '6px', textAlign: 'center' }}>
+                      <div style={{ fontWeight: 800, fontSize: k.sm ? '0.62rem' : '0.82rem', color: k.c }}>{k.val}</div>
+                      <div style={{ fontSize: '0.55rem', color: '#9CA3AF', fontWeight: 700 }}>{k.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Timing */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7, fontSize: '0.62rem', color: '#9CA3AF' }}>
+                  <span>🕐 {fmtTime(selectedMgr.last_gps.time)}</span>
+                  <span style={{ color: Date.now()-new Date(selectedMgr.last_gps.time) < 120000 ? '#10B981' : '#F59E0B', fontWeight: 700 }}>
+                    {fmtAgo(selectedMgr.last_gps.time)}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '10px', color: '#9CA3AF', fontSize: '0.78rem' }}>
+                ⚫ No GPS data available yet
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      <style>{`
+        @keyframes llm-pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.5);opacity:0.5}}
+      `}</style>
     </div>
+  )
+}
+
+/* ── Tiny stat chip ── */
+function StatChip({ children, color, bg, pulse }) {
+  return (
+    <span style={{
+      display: 'flex', alignItems: 'center', gap: 5,
+      padding: '4px 10px', borderRadius: 99,
+      background: bg, color: color,
+      fontSize: '0.68rem', fontWeight: 700,
+      whiteSpace: 'nowrap', flexShrink: 0,
+    }}>
+      {pulse && (
+        <span style={{
+          width: 7, height: 7, borderRadius: '50%',
+          background: color, display: 'inline-block',
+          animation: 'llm-pulse 1.2s infinite',
+        }}/>
+      )}
+      {children}
+    </span>
   )
 }

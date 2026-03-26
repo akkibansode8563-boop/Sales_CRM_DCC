@@ -670,8 +670,18 @@ export function subscribeToLiveUpdates(onUpdate) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'journeys' }, onUpdate)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'status_history' }, onUpdate)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_sales_reports' }, onUpdate)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'product_day' }, onUpdate)
     .subscribe()
   return () => supabase.removeChannel(channel)
+}
+
+// localStorage change listener for local mode real-time sync
+export function subscribeToLocalChanges(onUpdate) {
+  const handler = (e) => {
+    if (e.key === 'dcc_sfa_v3') onUpdate()
+  }
+  window.addEventListener('storage', handler)
+  return () => window.removeEventListener('storage', handler)
 }
 
 export function subscribeToManagerJourney(manager_id, onUpdate) {
@@ -738,7 +748,8 @@ export { getUsersAdmin as getUsersAdminSupa }
 // These wrappers bypass the async layer and call localDB directly.
 export function getAllVisitsSync(manager_id)      { return local.getAllVisits(manager_id) }
 export function getDailyReportsSync(manager_id)   { return local.getDailySalesReports(manager_id) }
-export function getProductEntriesSync(manager_id) { return local.getProductDayEntries(manager_id) }
+export function getProductEntriesSync(manager_id)              { return local.getProductDayEntries(manager_id) }
+export function getAllProductDayEntriesSync(dateFrom, dateTo, managerId) { return local.getAllProductDayEntries(dateFrom, dateTo, managerId) }
 export function getTargetsSync(manager_id)        { return local.getTargets(manager_id) }
 export function getJourneyHistorySync(manager_id) { return local.getJourneyHistory(manager_id) }
 export function getLiveStatusSync()               { return local.getLiveStatus() }

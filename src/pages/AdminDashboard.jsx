@@ -7,13 +7,14 @@ import {
     getAnalytics, productionReset, getDailyAlerts, shouldShowAlerts, getAlertDismissKey,
     bulkCreateTargets, calcDistanceKm, calcTravelTime,
     getTerritoryStats, getAISuggestions,
-    subscribeToLiveUpdates, migrateLocalToSupabase,
+    subscribeToLiveUpdates, subscribeToLocalChanges, migrateLocalToSupabase,
     exportToCSV, exportDailyReport,
     getLiveStatusSync      as getLiveStatus,
     getUsersAdminSync      as getUsersAdmin,
     getAllVisitsSync        as getAllVisits,
     getDailyReportsSync    as getDailySalesReports,
     getProductEntriesSync  as getProductDayEntries,
+    getAllProductDayEntriesSync,
     getTargetsSync         as getTargets,
     getJourneyHistorySync  as getJourneyHistory,
     getAllVisitsAllSync,
@@ -38,6 +39,7 @@ const Leaderboard          = lazy(() => import('../components/dashboard/Leaderbo
 const AIInsights           = lazy(() => import('../components/dashboard/AIInsights'))
 const CustomerIntelligence = lazy(() => import('../components/dashboard/CustomerIntelligence'))
 const ProductPerformance   = lazy(() => import('../components/dashboard/ProductPerformance'))
+const ProductDayAdmin      = lazy(() => import('../components/dashboard/ProductDayAdmin'))
 // merged into main supabaseDB import above
 import { startAutoSync, getQueueCount, onSyncStatusChange } from '../services/syncService'
 import './AdminDashboard.css'
@@ -158,6 +160,12 @@ export default function AdminDashboard() {
   useEffect(() => { reload() }, [reload])
   useEffect(() => {
     const unsub = subscribeToLiveUpdates(() => { setTimeout(reload, 800) })
+    return unsub
+  }, [reload])
+
+  // Local mode: listen for product_day changes from manager dashboard (same browser, other tab)
+  useEffect(() => {
+    const unsub = subscribeToLocalChanges(() => { setTimeout(reload, 400) })
     return unsub
   }, [reload])
 
@@ -1168,13 +1176,20 @@ useEffect(() => {
 
           {/* TAB: LIVE MAP */}
           {tab==='livemap' && (
-            <div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 140px)',minHeight:600}}>
-              <div className="panel" style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',padding:0}}>
-                <Suspense fallback={<div style={{display:'flex',alignItems:'center',justifyContent:'center',padding:40,color:'#6B7280'}}>Loading map...</div>}><LiveLocationMonitor
-                  managers={managers}
-                  salesManagers={salesManagers}
-                  onRefresh={reload}
-                /></Suspense>
+            <div className="livemap-container">
+              <div className="panel livemap-panel">
+                <Suspense fallback={
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:300,gap:10,color:'#6B7280'}}>
+                    <div style={{width:18,height:18,border:'2.5px solid #E5E7EB',borderTopColor:'#2563EB',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
+                    Loading map…
+                  </div>
+                }>
+                  <LiveLocationMonitor
+                    managers={managers}
+                    salesManagers={salesManagers}
+                    onRefresh={reload}
+                  />
+                </Suspense>
               </div>
             </div>
           )}
@@ -1191,9 +1206,38 @@ useEffect(() => {
 
           {/* TAB: PRODUCTS */}
           {tab==='products' && (
-            <div>
+            <div style={{display:'flex',flexDirection:'column',gap:16}}>
+
+              {/* ── Real-time Product Day Dashboard ── */}
               <div className="panel">
-                <SectionHeader title="&#x1F4E6; Product Performance" subtitle="Brand-wise and product-wise sales analysis"
+                <div className="panel-hdr">
+                  <div>
+                    <div className="panel-title">📦 Product Day — Live Activity</div>
+                    <div style={{fontSize:'0.7rem',color:'#9CA3AF',marginTop:2}}>
+                      All managers' daily product targets & achievements · synced in real-time
+                    </div>
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    <span style={{background:'#ECFDF5',color:'#059669',fontSize:'0.62rem',fontWeight:800,padding:'3px 9px',borderRadius:99,border:'1px solid #BBF7D0'}}>
+                      ● Live
+                    </span>
+                  </div>
+                </div>
+                <div className="panel-body" style={{padding:'16px'}}>
+                  <Suspense fallback={
+                    <div style={{display:'flex',alignItems:'center',gap:8,padding:'24px',color:'#9CA3AF',fontSize:'0.8rem'}}>
+                      <div style={{width:16,height:16,border:'2px solid #E5E7EB',borderTopColor:'#2563EB',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
+                      Loading product data…
+                    </div>
+                  }>
+                    <ProductDayAdmin managers={users} onRefresh={reload}/>
+                  </Suspense>
+                </div>
+              </div>
+
+              {/* ── Analytics-period chart (legacy) ── */}
+              <div className="panel">
+                <SectionHeader title="📊 Product Performance Chart" subtitle="Aggregated over selected period"
                   actions={
                     <div style={{display:'flex',gap:6}}>
                       {['week','month','year'].map(p => (
@@ -1206,9 +1250,12 @@ useEffect(() => {
                   }
                 />
                 <div className="panel-body" style={{padding:'16px'}}>
-                  <Suspense fallback={null}><ProductPerformance productEntries={analyticsData?.managerStats?.flatMap(m=>m.productPerformance)||[]} period={analyticsPeriod}/></Suspense>
+                  <Suspense fallback={null}>
+                    <ProductPerformance productEntries={analyticsData?.managerStats?.flatMap(m=>m.productPerformance)||[]} period={analyticsPeriod}/>
+                  </Suspense>
                 </div>
               </div>
+
             </div>
           )}
 

@@ -860,3 +860,49 @@
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ═══════════════════════════════════════
+   LIVE MAP — Full-height responsive
+   ═══════════════════════════════════════ */
+
+.livemap-container {
+  /* On desktop: fill the content area height */
+  height: calc(100vh - 130px);
+  min-height: 500px;
+  display: flex;
+  flex-direction: column;
+}
+
+.livemap-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0 !important;
+  min-height: 0;
+}
+
+/* Tablet */
+@media (max-width: 1024px) {
+  .livemap-container {
+    height: calc(100vh - 120px);
+    min-height: 480px;
+  }
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .livemap-container {
+    /* Use viewport units to fill screen properly on mobile */
+    height: calc(100svh - 160px);
+    min-height: 420px;
+  }
+}
+
+/* Very small phones */
+@media (max-width: 480px) {
+  .livemap-container {
+    height: calc(100svh - 150px);
+    min-height: 380px;
+  }
+}

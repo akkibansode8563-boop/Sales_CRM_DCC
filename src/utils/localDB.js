@@ -85,16 +85,30 @@ function saveDB(db) {
   _dbCache = db
   if (_saveTimer) clearTimeout(_saveTimer)
   _saveTimer = setTimeout(() => {
-    try { localStorage.setItem(DB_KEY, JSON.stringify(db)) } catch(e) {}
+    try {
+      const serialized = JSON.stringify(db)
+      localStorage.setItem(DB_KEY, serialized)
+      // Broadcast to other tabs/windows (admin console) — StorageEvent only fires for OTHER tabs
+      // For same-tab we dispatch manually
+      try {
+        window.dispatchEvent(new StorageEvent('storage', { key: DB_KEY, newValue: serialized }))
+      } catch {}
+    } catch(e) {}
     _saveTimer = null
   }, 300)
 }
 
-// Immediate flush for critical writes (auth, journey start/end)
+// Immediate flush for critical writes (auth, journey start/end, product_day)
 function saveDBNow(db) {
   _dbCache = db
   if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null }
-  try { localStorage.setItem(DB_KEY, JSON.stringify(db)) } catch(e) {}
+  try {
+    const serialized = JSON.stringify(db)
+    localStorage.setItem(DB_KEY, serialized)
+    try {
+      window.dispatchEvent(new StorageEvent('storage', { key: DB_KEY, newValue: serialized }))
+    } catch {}
+  } catch(e) {}
 }
 function nextId(arr) { return arr.length>0 ? Math.max(...arr.map(i=>i.id||0))+1 : 1 }
 
@@ -388,6 +402,30 @@ export function getProductDayEntries(manager_id, dateParam=null) {
   let entries=(getDB().product_day||[]).filter(p=>p.manager_id===manager_id)
   if(dateParam) entries=entries.filter(p=>dateParam.length===7?p.date.startsWith(dateParam):p.date===dateParam)
   return entries.sort((a,b)=>new Date(b.date)-new Date(a.date))
+}
+
+// Get ALL product_day entries across ALL managers — with manager name attached
+export function getAllProductDayEntries(dateFrom=null, dateTo=null, managerId=null) {
+  const db = getDB()
+  const users = db.users || []
+  let entries = db.product_day || []
+
+  // Attach manager_name and manager_username to each entry
+  entries = entries.map(e => {
+    const mgr = users.find(u => u.id === e.manager_id)
+    return {
+      ...e,
+      manager_name:     mgr?.full_name     || 'Unknown',
+      manager_username: mgr?.username      || '',
+      manager_territory: mgr?.territory    || '',
+    }
+  })
+
+  if (managerId)  entries = entries.filter(e => e.manager_id === managerId)
+  if (dateFrom)   entries = entries.filter(e => e.date >= dateFrom)
+  if (dateTo)     entries = entries.filter(e => e.date <= dateTo)
+
+  return entries.sort((a,b) => new Date(b.date) - new Date(a.date) || a.manager_name.localeCompare(b.manager_name))
 }
 export function createProductDayEntry(data) {
   const db=getDB()
