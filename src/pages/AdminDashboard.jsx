@@ -41,7 +41,7 @@ const CustomerIntelligence = lazy(() => import('../components/dashboard/Customer
 const ProductPerformance   = lazy(() => import('../components/dashboard/ProductPerformance'))
 const ProductDayAdmin      = lazy(() => import('../components/dashboard/ProductDayAdmin'))
 // merged into main supabaseDB import above
-import { startAutoSync, getQueueCount, onSyncStatusChange } from '../services/syncService'
+import { startAutoSync, startRealtimeSync, getQueueCount, onSyncStatusChange } from '../services/syncService'
 import './AdminDashboard.css'
 
 const STATUS_META = {
