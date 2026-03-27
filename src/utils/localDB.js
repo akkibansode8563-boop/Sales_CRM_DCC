@@ -47,7 +47,7 @@ const INITIAL_DB = {
 let _dbCache = null
 let _saveTimer = null
 
-function getDB() {
+export function getDB() {
   if (_dbCache) return _dbCache          // instant — no JSON.parse
   try {
     const raw = localStorage.getItem(DB_KEY)
@@ -110,6 +110,21 @@ function saveDBNow(db) {
     } catch {}
   } catch(e) {}
 }
+
+export function replaceDB(nextDb) {
+  const current = getDB()
+  const merged = {
+    ...JSON.parse(JSON.stringify(INITIAL_DB)),
+    ...nextDb,
+    recentCustomers: Array.isArray(nextDb?.recentCustomers) ? nextDb.recentCustomers : (current.recentCustomers || []),
+    recentProducts: Array.isArray(nextDb?.recentProducts) ? nextDb.recentProducts : (current.recentProducts || []),
+    recentBrands: Array.isArray(nextDb?.recentBrands) ? nextDb.recentBrands : (current.recentBrands || []),
+    offline_queue: Array.isArray(nextDb?.offline_queue) ? nextDb.offline_queue : (current.offline_queue || []),
+  }
+  saveDBNow(merged)
+  return merged
+}
+
 function nextId(arr) { return arr.length>0 ? Math.max(...arr.map(i=>i.id||0))+1 : 1 }
 
 // -------------------------------------------

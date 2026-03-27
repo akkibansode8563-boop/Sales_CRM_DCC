@@ -41,7 +41,7 @@ const CustomerIntelligence = lazy(() => import('../components/dashboard/Customer
 const ProductPerformance   = lazy(() => import('../components/dashboard/ProductPerformance'))
 const ProductDayAdmin      = lazy(() => import('../components/dashboard/ProductDayAdmin'))
 // merged into main supabaseDB import above
-import { startAutoSync, startRealtimeSync, getQueueCount, onSyncStatusChange } from '../services/syncService'
+import { startAutoSync, startRealtimeSync, getQueueCount, onSyncStatusChange, forceSyncNow, getLastSyncAt } from '../services/syncService'
 import './AdminDashboard.css'
 
 const STATUS_META = {
@@ -105,6 +105,8 @@ export default function AdminDashboard() {
   const [allVisitsData,   setAllVisitsData]   = useState([])
   const [offlineCount,    setOfflineCount]    = useState(0)
   const [syncStatus,      setSyncStatus]      = useState('idle')
+  const [lastSyncAt,      setLastSyncAt]      = useState(() => getLastSyncAt())
+  const [manualSyncing,   setManualSyncing]   = useState(false)
 
   const initUF = { username:'',password:'',full_name:'',email:'',phone:'',territory:'',role:'Sales Manager' }
   const initTF = { visit_target:'',sales_target:'',month:new Date().getMonth()+1,year:new Date().getFullYear() }
@@ -113,6 +115,7 @@ export default function AdminDashboard() {
 
   const today    = new Date().toISOString().split('T')[0]
   const toastMsg = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3200) }
+  const syncLabel = lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' }) : 'Not yet'
 
   const reload = useCallback(() => {
     try { const m = getLiveStatus();   setManagers(Array.isArray(m) ? m : []) }     catch(e) { console.error('getLiveStatus',e);   setManagers([]) }
@@ -128,9 +131,23 @@ export default function AdminDashboard() {
     const unsub = onSyncStatusChange(s => {
       setSyncStatus(s.syncing ? 'syncing' : s.status || 'idle')
       setOfflineCount(s.count || 0)
+      if (s.lastSyncAt) setLastSyncAt(s.lastSyncAt)
     })
     return unsub
   }, [])
+
+  const syncNow = async () => {
+    setManualSyncing(true)
+    const result = await forceSyncNow()
+    setManualSyncing(false)
+    if (result.success) {
+      if (result.lastSyncAt) setLastSyncAt(result.lastSyncAt)
+      reload()
+      toastMsg('Cloud sync completed')
+    } else {
+      toastMsg(result.message || 'Sync failed', 'error')
+    }
+  }
 
   const loadAnalytics = useCallback((period, date, mgrId=null) => {
     try { setAnalyticsData(getAnalytics(mgrId, period, date) || null) }
@@ -379,6 +396,16 @@ useEffect(() => {
                   Local storage only
                 </div>
             }
+            {isSupabaseConfigured() && (
+              <div style={{marginTop:8,fontSize:'0.66rem',color:'#6B7280',padding:'0 2px'}}>
+                Last synced: {syncLabel} · Status: {manualSyncing ? 'manual sync running' : syncStatus}
+              </div>
+            )}
+            {isSupabaseConfigured() && (
+              <button onClick={syncNow} style={{marginTop:8,width:'100%',background:'#EFF6FF',color:'#2563EB',border:'1px solid #BFDBFE',borderRadius:8,padding:'8px 10px',fontSize:'0.72rem',fontWeight:800,cursor:manualSyncing?'not-allowed':'pointer'}} disabled={manualSyncing}>
+                {manualSyncing ? 'Syncing...' : 'Sync Now'}
+              </button>
+            )}
           </div>
           <div className="sb-user">
             <div className="sb-user-avatar">{user?.full_name?.[0]}</div>
@@ -417,6 +444,9 @@ useEffect(() => {
             <button className="amh-btn" onClick={reload}>
               <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M13 7.5A5.5 5.5 0 112.5 5M2 2v3h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
+            <button className="amh-btn" onClick={syncNow} title={`Last synced ${syncLabel}`}>
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M2.5 8.5A5 5 0 0011 11M12.5 6.5A5 5 0 004 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M10.7 11H11a1 1 0 001-1v-.3M4 4H3a1 1 0 00-1 1v1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+            </button>
             <button className="amh-btn" onClick={logout}>
               <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M5 13H3a1 1 0 01-1-1V3a1 1 0 011-1h2M10 10l3-3-3-3M13 7H6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
@@ -437,7 +467,7 @@ useEffect(() => {
               {NAV.find(n=>n.id===tab)?.ico}
               <span>{NAV.find(n=>n.id===tab)?.lbl}</span>
             </div>
-            <div className="atb-sub">{new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
+            <div className="atb-sub">{new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})} · Last sync {syncLabel}</div>
           </div>
           <div className="atb-right">
             {(tab==='overview'||tab==='managers') && (

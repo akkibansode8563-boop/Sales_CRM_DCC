@@ -40,6 +40,71 @@ function generateToken(user) {
   return btoa(JSON.stringify({ user_id: user.id, username: user.username, role: user.role, exp: Date.now() + 24 * 60 * 60 * 1000 }))
 }
 
+async function fetchTable(tableName, queryBuilder = q => q) {
+  const query = queryBuilder(supabase.from(tableName).select('*'))
+  const { data, error } = await query
+  if (error) throw error
+  return data || []
+}
+
+export async function syncCloudToLocal() {
+  if (!USE_CLOUD || !supabase) return { success: false, message: 'Supabase not configured' }
+
+  const current = typeof local.getDB === 'function' ? local.getDB() : {}
+  const [
+    users,
+    visits,
+    targets,
+    statusHistory,
+    journeys,
+    journeyLocations,
+    dailySalesReports,
+    productDay,
+    customers,
+    brands,
+    products,
+  ] = await Promise.all([
+    fetchTable('users'),
+    fetchTable('visits'),
+    fetchTable('targets'),
+    fetchTable('status_history'),
+    fetchTable('journeys'),
+    fetchTable('journey_locations'),
+    fetchTable('daily_sales_reports'),
+    fetchTable('product_day'),
+    fetchTable('customers'),
+    fetchTable('brands'),
+    fetchTable('products'),
+  ])
+
+  const mirrored = {
+    users,
+    visits,
+    targets,
+    statusHistory,
+    journeys,
+    journey_locations: journeyLocations,
+    daily_sales_reports: dailySalesReports,
+    product_day: productDay,
+    customers,
+    brands,
+    products,
+    recentCustomers: current.recentCustomers || [],
+    recentProducts: current.recentProducts || [],
+    recentBrands: current.recentBrands || [],
+    offline_queue: current.offline_queue || [],
+  }
+
+  local.replaceDB(mirrored)
+  return { success: true, counts: {
+    users: users.length,
+    visits: visits.length,
+    targets: targets.length,
+    customers: customers.length,
+    products: products.length,
+  } }
+}
+
 // ---------------------------------------------------------
 // AUTH
 // ---------------------------------------------------------
@@ -73,6 +138,8 @@ export async function authLogin(username, password) {
         .update({ plain_password: password.trim() })
         .eq('id', data.id)
     }
+
+    try { await syncCloudToLocal() } catch {}
 
     return {
       success: true,
@@ -130,8 +197,7 @@ export async function createUser(data) {
       is_active: true,
     }).select().single()
     if (error) throw error
-    // Also create in local for offline support
-    try { local.createUser(data) } catch {}
+    try { await syncCloudToLocal() } catch {}
     return { success: true, user_id: newUser.id, username: cleanUsername }
   } catch (e) {
     if (e.message.includes('already exists')) throw e
@@ -152,6 +218,7 @@ export async function updateUser(id, updates) {
     patch.updated_at = new Date().toISOString()
     const { data, error } = await supabase.from('users').update(patch).eq('id', id).select().single()
     if (error) throw error
+    try { await syncCloudToLocal() } catch {}
     return data
   } catch { return local.updateUser(id, updates) }
 }
@@ -166,6 +233,7 @@ export async function adminSetPassword(id, newPassword) {
       updated_at: new Date().toISOString(),
     }).eq('id', id)
     if (error) throw error
+    try { await syncCloudToLocal() } catch {}
     return { success: true }
   } catch { return local.adminSetPassword(id, newPassword) }
 }
@@ -175,6 +243,7 @@ export async function deleteUser(id) {
   try {
     const { error } = await supabase.from('users').update({ is_active: false, deleted_at: new Date().toISOString() }).eq('id', id)
     if (error) throw error
+    try { await syncCloudToLocal() } catch {}
     return { success: true }
   } catch { return local.deleteUser(id) }
 }
@@ -405,7 +474,7 @@ export async function bulkCreateTargets(manager_ids, visit_target, sales_target,
     const records = manager_ids.map(mid => ({ manager_id: mid, visit_target: visit_target || 0, sales_target: sales_target || 0, month, year }))
     const { data, error } = await supabase.from('targets').upsert(records, { onConflict: 'manager_id,month,year' }).select()
     if (error) throw error
-    try { local.bulkCreateTargets(manager_ids, visit_target, sales_target, month, year) } catch {}
+    try { await syncCloudToLocal() } catch {}
     return data
   } catch { return local.bulkCreateTargets(manager_ids, visit_target, sales_target, month, year) }
 }
@@ -518,7 +587,7 @@ export async function createCustomer(data) {
       visit_count: 0,
     }).select().single()
     if (error) throw error
-    try { local.createCustomer(data) } catch {}
+    try { await syncCloudToLocal() } catch {}
     return customer
   } catch (e) {
     if (e.message === 'Customer already exists') throw e
@@ -563,7 +632,7 @@ export async function createBrand(name) {
     if (existing) throw new Error('Brand exists')
     const { data, error } = await supabase.from('brands').insert({ name: name.trim() }).select().single()
     if (error) throw error
-    try { local.createBrand(name) } catch {}
+    try { await syncCloudToLocal() } catch {}
     return data
   } catch (e) {
     if (e.message === 'Brand exists') throw e
@@ -602,7 +671,7 @@ export async function createProduct(data) {
       category: data.category || '',
     }).select().single()
     if (error) throw error
-    try { local.createProduct(data) } catch {}
+    try { await syncCloudToLocal() } catch {}
     return product
   } catch { return local.createProduct(data) }
 }

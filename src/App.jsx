@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
 import ProtectedRoute from './components/ProtectedRoute'
+import AppErrorBoundary from './components/AppErrorBoundary'
 import './App.css'
 
 // Lazy-load heavy pages — only downloaded when user navigates there
@@ -33,21 +34,23 @@ function App() {
   return (
     <Router>
       <div className="app">
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route path="/login"    element={<Login />} />
-            <Route path="/register" element={
-              <ProtectedRoute requireAdmin={true}><Register /></ProtectedRoute>
-            }/>
-            <Route path="/manager"  element={
-              <ProtectedRoute><ManagerDashboard /></ProtectedRoute>
-            }/>
-            <Route path="/admin"    element={
-              <ProtectedRoute requireAdmin={true}><AdminDashboard /></ProtectedRoute>
-            }/>
-            <Route path="/"         element={<Navigate to="/login" replace />} />
-          </Routes>
-        </Suspense>
+        <AppErrorBoundary>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/login"    element={<Login />} />
+              <Route path="/register" element={
+                <ProtectedRoute requireAdmin={true}><Register /></ProtectedRoute>
+              }/>
+              <Route path="/manager"  element={
+                <ProtectedRoute><ManagerDashboard /></ProtectedRoute>
+              }/>
+              <Route path="/admin"    element={
+                <ProtectedRoute requireAdmin={true}><AdminDashboard /></ProtectedRoute>
+              }/>
+              <Route path="/"         element={<Navigate to="/login" replace />} />
+            </Routes>
+          </Suspense>
+        </AppErrorBoundary>
       </div>
     </Router>
   )

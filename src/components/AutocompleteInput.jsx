@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { createCustomerSync as createCustomer, createBrandSync as createBrand, createProduct } from '../utils/supabaseDB'
+import { createCustomer, createBrand, createProduct } from '../utils/supabaseDB'
 import './AutocompleteInput.css'
 
 // -------------------------------------------------------------
@@ -52,11 +52,16 @@ export default function AutocompleteInput({
     if (!searchFn) return
     setLoading(true)
     clearTimeout(debounce.current)
-    debounce.current = setTimeout(() => {
-      const r = searchFn(q)
-      setResults(Array.isArray(r) ? r : [])
-      setLoading(false)
-      setCursor(-1)
+    debounce.current = setTimeout(async () => {
+      try {
+        const r = await searchFn(q)
+        setResults(Array.isArray(r) ? r : [])
+      } catch {
+        setResults([])
+      } finally {
+        setLoading(false)
+        setCursor(-1)
+      }
     }, 120)
   }, [searchFn])
 
@@ -205,11 +210,11 @@ export function QuickAddCustomerModal({ onCreated, onClose }) {
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const submit = () => {
+  const submit = async () => {
     if (!f.name.trim()) { setErr('Customer name is required'); return }
     setSaving(true)
     try {
-      const c = createCustomer(f)
+      const c = await createCustomer(f)
       onCreated(c)
       onClose()
     } catch(e) { setErr(e.message); setSaving(false) }
@@ -270,9 +275,9 @@ export function QuickAddBrandModal({ onCreated, onClose }) {
   const [name, setName] = useState('')
   const [err, setErr] = useState('')
 
-  const submit = () => {
+  const submit = async () => {
     if (!name.trim()) { setErr('Brand name required'); return }
-    try { const b = createBrand(name); onCreated(b); onClose() }
+    try { const b = await createBrand(name); onCreated(b); onClose() }
     catch(e) { setErr(e.message) }
   }
 
@@ -303,9 +308,9 @@ export function QuickAddProductModal({ brandId, brandName, onCreated, onClose })
   const [f, setF] = useState({ name:'', category:'', brand_id:brandId||null, brand_name:brandName||'' })
   const [err, setErr] = useState('')
 
-  const submit = () => {
+  const submit = async () => {
     if (!f.name.trim()) { setErr('Product name required'); return }
-    try { const p = createProduct(f); onCreated(p); onClose() }
+    try { const p = await createProduct(f); onCreated(p); onClose() }
     catch(e) { setErr(e.message) }
   }
 

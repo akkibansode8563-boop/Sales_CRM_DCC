@@ -14,17 +14,18 @@ import {
     getActiveJourneySync   as getActiveJourney,
     getTodayVisitsSync     as getTodayVisits,
     getCustomersSync       as getCustomers,
-    updateStatusSync       as updateStatus,
-    createVisitSync        as createVisit,
-    startJourneySync       as startJourney,
-    endJourneySync         as endJourney,
-    saveDailySalesReportSync   as saveDailySalesReport,
-    createProductDayEntrySync  as createProductDayEntry,
-    updateProductDayEntrySync  as updateProductDayEntry,
-    deleteProductDayEntrySync  as deleteProductDayEntry,
-    createCustomerSync     as createCustomer,
-    createBrandSync        as createBrand,
-    createProductSync      as createProduct,
+    updateStatus,
+    createVisit,
+    startJourney,
+    endJourney,
+    saveDailySalesReport,
+    createProductDayEntry,
+    updateProductDayEntry,
+    deleteProductDayEntry,
+    createCustomer,
+    updateCustomer,
+    createBrand,
+    createProduct,
     getCurrentStatus
   } from '../utils/supabaseDB'
 import JourneyMap from '../components/JourneyMap'
@@ -36,6 +37,8 @@ import MotivationalIntro from '../components/MotivationalIntro'
 import ProformaInvoice  from '../components/ProformaInvoice'
 import JourneyStartModal from '../components/JourneyStartModal'
 import dccLogo from '../assets/dcc-logo.png'
+import { createVisitDraft, validateVisitDraft } from '../utils/visitRequirements'
+import { startRealtimeSync, onSyncStatusChange, getQueueCount, forceSyncNow, getLastSyncAt } from '../services/syncService'
 import './ManagerDashboard.css'
 
 /* -- Constants -- */
@@ -61,9 +64,26 @@ const calcElapsed = start => {
 }
 
 /* -- Visit modal initial form -- */
-const initVF = () => ({ customer_id:null, customer_name:'', client_type:'Retailer', location:'', visit_type:'Field Visit', status:'Completed', notes:'' })
+const initVF = () => createVisitDraft()
 const initSF = () => ({ sales_target:'', sales_achievement:'', profit_target:'', profit_achievement:'' })
 const initPF = () => ({ brand:'', brand_id:null, product_name:'', product_id:null, target_qty:'', achieved_qty:'', target_amount:'', achieved_amount:'' })
+const getInitialOnlineStatus = () => (typeof navigator !== 'undefined' ? navigator.onLine : true)
+const getInitialNotificationPermission = () => (typeof Notification !== 'undefined' ? Notification.permission : 'default')
+const getInitialIntroVisibility = () => {
+  try {
+    return typeof sessionStorage !== 'undefined' && !sessionStorage.getItem('dcc_intro_shown')
+  } catch {
+    return false
+  }
+}
+const getStoredProfilePic = (userId) => {
+  if (!userId) return null
+  try {
+    return localStorage.getItem(`dcc_pfp_${userId}`) || null
+  } catch {
+    return null
+  }
+}
 
 export default function ManagerDashboard() {
   const { user, logout } = useAuthStore()
@@ -82,7 +102,7 @@ export default function ManagerDashboard() {
   const [customers,        setCustomers]        = useState([])
   const [customerFilter,   setCustomerFilter]   = useState('')
   const [nearbyCustomers,  setNearbyCustomers]  = useState([])
-  const [isOnline,         setIsOnline]         = useState(navigator.onLine)
+  const [isOnline,         setIsOnline]         = useState(getInitialOnlineStatus)
   const [offlineQueue,     setOfflineQueue]     = useState([])
   const [territories,      setTerritories]      = useState([])
   const [showStatusPicker, setShowStatusPicker] = useState(false)
@@ -109,21 +129,34 @@ export default function ManagerDashboard() {
   const [recordingTime, setRecordingTime]   = useState(0)
   const [recordTimer, setRecordTimer]       = useState(null)
   // Notifications
-  const [notifPerm, setNotifPerm]           = useState(Notification?.permission || 'default')
+  const [notifPerm, setNotifPerm]           = useState(getInitialNotificationPermission)
+  const [syncStatus, setSyncStatus]         = useState('idle')
+  const [pendingSyncCount, setPendingSyncCount] = useState(() => getQueueCount())
+  const [lastSyncAt, setLastSyncAt]         = useState(() => getLastSyncAt())
+  const [manualSyncing, setManualSyncing]   = useState(false)
 
   // Motivational intro — show once per session
-  const [showIntro, setShowIntro]           = useState(() => !sessionStorage.getItem('dcc_intro_shown'))
+  const [showIntro, setShowIntro]           = useState(getInitialIntroVisibility)
   // Journey start modal
   const [showJourneyModal, setShowJourneyModal] = useState(false)
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
   // Profile picture — persisted in localStorage per user
-  const [profilePic, setProfilePic]         = useState(() => {
-    try { return localStorage.getItem(`dcc_pfp_${user?.id}`) || null } catch { return null }
-  })
+  const [profilePic, setProfilePic]         = useState(() => getStoredProfilePic(user?.id))
 
   const today = new Date().toISOString().split('T')[0]
 
   const toastMsg = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null), 3200) }
+  const syncLabel = lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' }) : 'Not yet'
+
+  useEffect(() => {
+    setIsOnline(getInitialOnlineStatus())
+    setNotifPerm(getInitialNotificationPermission())
+    setShowIntro(getInitialIntroVisibility())
+  }, [])
+
+  useEffect(() => {
+    setProfilePic(getStoredProfilePic(user?.id))
+  }, [user?.id])
 
   /* -- Photo Capture -- */
   const capturePhoto = () => {
@@ -261,6 +294,20 @@ export default function ManagerDashboard() {
     setOfflineQueue(getOfflineQueue())
   }, [user?.id])
 
+  useEffect(() => {
+    const unsub = onSyncStatusChange(s => {
+      setSyncStatus(s.syncing ? 'syncing' : (s.status || 'idle'))
+      setPendingSyncCount(s.count ?? getQueueCount())
+      if (s.lastSyncAt) setLastSyncAt(s.lastSyncAt)
+    })
+    return unsub
+  }, [])
+
+  useEffect(() => {
+    const unsub = startRealtimeSync(() => { setTimeout(reload, 300) })
+    return unsub
+  }, [reload])
+
   /* ── Continuous GPS tracking while journey is active ──────────────────── */
   useEffect(() => {
     if (!journey?.id || !user?.id) return
@@ -350,8 +397,58 @@ export default function ManagerDashboard() {
     }
   }
 
+  const syncNow = async () => {
+    setManualSyncing(true)
+    const result = await forceSyncNow()
+    setManualSyncing(false)
+    if (result.success) {
+      if (result.lastSyncAt) setLastSyncAt(result.lastSyncAt)
+      reload()
+      toastMsg('Cloud sync completed')
+    } else {
+      toastMsg(result.message || 'Sync failed', 'error')
+    }
+  }
+
+  const ensureVisitCustomer = async (draft) => {
+    const payload = {
+      name: (draft.customer_name || draft.client_name || '').trim(),
+      owner_name: draft.contact_person.trim(),
+      phone: draft.contact_phone.trim(),
+      type: draft.client_type,
+      address: draft.location.trim(),
+      territory: user?.territory || '',
+      created_by: user?.id || null,
+      latitude: draft.latitude ?? null,
+      longitude: draft.longitude ?? null,
+    }
+
+    if (draft.customer_id) {
+      try { await updateCustomer(draft.customer_id, payload) } catch {}
+      return draft.customer_id
+    }
+
+    try {
+      const created = await createCustomer(payload)
+      return created?.id || null
+    } catch (error) {
+      const matches = await searchCustomers(payload.name)
+      const exact = (matches || []).find(c => c.name?.trim().toLowerCase() === payload.name.toLowerCase())
+      if (exact?.id) {
+        try { await updateCustomer(exact.id, payload) } catch {}
+        return exact.id
+      }
+      throw error
+    }
+  }
+
   /* -- Status -- */
-  const changeStatus = s => { updateStatus(user.id,s); setStatus(s); setShowStatusPicker(false); toastMsg(`Status → ${s}`) }
+  const changeStatus = async s => {
+    await updateStatus(user.id, s)
+    setStatus(s)
+    setShowStatusPicker(false)
+    toastMsg(`Status → ${s}`)
+  }
 
   /* -- Journey -- */
   const handleStartJourney = () => {
@@ -406,9 +503,9 @@ export default function ManagerDashboard() {
       const loc = gpsCoords
         ? await reverseGeo(gpsCoords.lat, gpsCoords.lng)
         : 'Starting Point'
-      const j = startJourney(user.id, loc, gpsCoords?.lat, gpsCoords?.lng)
+      const j = await startJourney(user.id, loc, gpsCoords?.lat, gpsCoords?.lng)
       setJourney(j)
-      changeStatus(mode)
+      await changeStatus(mode)
       toastMsg(`${mode} journey started! 🚀`)
       setShowMap(true)
     } catch(e) { toastMsg(e.message,'error') }
@@ -418,55 +515,90 @@ export default function ManagerDashboard() {
     const c = await getGPS()
     const loc = c ? await reverseGeo(c.latitude,c.longitude) : 'End Point'
     try {
-      const j = endJourney(user.id,loc,c?.latitude,c?.longitude)
-      setJourney(null); changeStatus('In-Office'); reload()
+      const j = await endJourney(user.id,loc,c?.latitude,c?.longitude)
+      setJourney(null); await changeStatus('In-Office'); reload()
       toastMsg(`Journey done · ${j.total_visits} stops · ${j.total_km} km 🎯`)
     } catch(e) { toastMsg(e.message,'error') }
   }
 
   /* -- Map visit log -- */
-  const onVisitLogged = data => {
-    createVisit({...data, manager_id:user.id, visit_date:today})
-    reloadVisits(); toastMsg(`Stop #${todayVisits.length+1} logged ✅`)
+  const onVisitLogged = async data => {
+    try {
+      const draftError = validateVisitDraft({ ...data, customer_name: data.client_name, photo: data.photo })
+      if (draftError) { toastMsg(draftError, 'error'); return }
+      const customerId = await ensureVisitCustomer({ ...data, customer_name: data.client_name })
+      await createVisit({
+        manager_id:user.id,
+        visit_date:today,
+        customer_id:customerId,
+        client_name:data.client_name,
+        customer_name:data.client_name,
+        client_type:data.client_type,
+        location:data.location,
+        visit_type:data.visit_type,
+        status:'Completed',
+        notes:data.notes,
+        latitude:data.latitude,
+        longitude:data.longitude,
+        photo:data.photo,
+        voice_note:data.voice_note || null,
+      })
+      reloadVisits(); toastMsg(`Stop #${todayVisits.length+1} logged ✅`)
+    } catch (error) {
+      toastMsg(error.message || 'Unable to log visit', 'error')
+    }
   }
 
   /* -- Visit modal submit -- */
   const submitVisit = async () => {
-    if (!vf.customer_name.trim()||!vf.location.trim()) return toastMsg('Customer name & location required','error')
-    const c = await getGPS()
-    createVisit({
-      manager_id:user.id, visit_date:today,
-      customer_id:vf.customer_id||null, client_name:vf.customer_name,
-      customer_name:vf.customer_name, client_type:vf.client_type,
-      location:vf.location, visit_type:vf.visit_type,
-      status:vf.status, notes:vf.notes,
-      latitude:c?.latitude||null, longitude:c?.longitude||null,
-      photo:visitPhoto||null,
-      voice_note:voiceNote||null,
-    })
-    setVisitModal(false)
-    setVf(initVF())
-    setVisitPhoto(null); setPhotoPreview(null)
-    setVoiceNote(null); setVoiceBlob(null)
-    reload()
-    toastMsg('Visit logged ✅')
+    try {
+      const c = await getGPS()
+      const draft = {
+        ...vf,
+        latitude: c?.latitude ?? null,
+        longitude: c?.longitude ?? null,
+        photo: visitPhoto,
+        voice_note: voiceNote,
+      }
+      const draftError = validateVisitDraft(draft)
+      if (draftError) return toastMsg(draftError,'error')
+      const customerId = await ensureVisitCustomer(draft)
+      await createVisit({
+        manager_id:user.id, visit_date:today,
+        customer_id:customerId, client_name:vf.customer_name,
+        customer_name:vf.customer_name, client_type:vf.client_type,
+        location:vf.location, visit_type:vf.visit_type,
+        status:vf.status, notes:vf.notes,
+        latitude:c?.latitude||null, longitude:c?.longitude||null,
+        photo:visitPhoto||null,
+        voice_note:voiceNote||null,
+      })
+      setVisitModal(false)
+      setVf(initVF())
+      setVisitPhoto(null); setPhotoPreview(null)
+      setVoiceNote(null); setVoiceBlob(null)
+      reload()
+      toastMsg('Visit logged ✅')
+    } catch (error) {
+      toastMsg(error.message || 'Unable to log visit', 'error')
+    }
   }
 
   /* -- Sales modal -- */
-  const submitSales = () => {
+  const submitSales = async () => {
     if (!sf.sales_achievement) return toastMsg('Sales achievement required','error')
-    saveDailySalesReport({ manager_id:user.id, date:today, sales_target:+sf.sales_target||0, sales_achievement:+sf.sales_achievement||0, profit_target:+sf.profit_target||0, profit_achievement:+sf.profit_achievement||0 })
+    await saveDailySalesReport({ manager_id:user.id, date:today, sales_target:+sf.sales_target||0, sales_achievement:+sf.sales_achievement||0, profit_target:+sf.profit_target||0, profit_achievement:+sf.profit_achievement||0 })
     setSalesModal(false); setSf(initSF()); reloadReports(); toastMsg('Report submitted ✅')
   }
   const salesAchPct = sf.sales_target>0&&sf.sales_achievement>0 ? Math.round((+sf.sales_achievement/+sf.sales_target)*100) : null
 
   /* -- Product modal -- */
-  const submitProduct = () => {
+  const submitProduct = async () => {
     if (!pf.brand.trim()||!pf.product_name.trim()) return toastMsg('Brand & product name required','error')
     if (editProd) {
-      updateProductDayEntry(editProd.id,{achieved_qty:+pf.achieved_qty||0, achieved_amount:+pf.achieved_amount||0})
+      await updateProductDayEntry(editProd.id,{achieved_qty:+pf.achieved_qty||0, achieved_amount:+pf.achieved_amount||0})
     } else {
-      createProductDayEntry({ manager_id:user.id, date:today, brand:pf.brand, brand_id:pf.brand_id||null, product_name:pf.product_name, product_id:pf.product_id||null, target_qty:+pf.target_qty||0, achieved_qty:+pf.achieved_qty||0, target_amount:+pf.target_amount||0, achieved_amount:+pf.achieved_amount||0 })
+      await createProductDayEntry({ manager_id:user.id, date:today, brand:pf.brand, brand_id:pf.brand_id||null, product_name:pf.product_name, product_id:pf.product_id||null, target_qty:+pf.target_qty||0, achieved_qty:+pf.achieved_qty||0, target_amount:+pf.target_amount||0, achieved_amount:+pf.achieved_amount||0 })
     }
     setProductModal(false); setEditProd(null); setPf(initPF()); reloadProducts()
     toastMsg(editProd?'Updated ✅':'Product entry added ✅')
@@ -475,6 +607,11 @@ export default function ManagerDashboard() {
     setEditProd(p)
     setPf({brand:p.brand||'',brand_id:p.brand_id||null,product_name:p.product_name,product_id:p.product_id||null,target_qty:String(p.target_qty),achieved_qty:String(p.achieved_qty),target_amount:String(p.target_amount),achieved_amount:String(p.achieved_amount)})
     setProductModal(true)
+  }
+  const removeProductEntry = async (id, showToast = true) => {
+    await deleteProductDayEntry(id)
+    reloadProducts()
+    if (showToast) toastMsg('Deleted')
   }
   const prodPct = pf.target_qty>0&&pf.achieved_qty>0 ? Math.round((+pf.achieved_qty/+pf.target_qty)*100) : null
 
@@ -914,7 +1051,7 @@ export default function ManagerDashboard() {
                         <div><div className="pc-brand-tag">{p.brand}</div><div className="pc-name">{p.product_name}</div></div>
                         <div className="pc-btns">
                           <button className="pc-btn" onClick={()=>openEditProd(p)}>✏️</button>
-                          <button className="pc-btn pc-btn-del" onClick={()=>{deleteProductDayEntry(p.id);reloadProducts();toastMsg('Deleted')}}>🗑️</button>
+                          <button className="pc-btn pc-btn-del" onClick={()=>{removeProductEntry(p.id)}}>🗑️</button>
                         </div>
                       </div>
                       <div className="pc-metrics">
@@ -937,7 +1074,7 @@ export default function ManagerDashboard() {
                     <div key={p.id} className="product-card product-card-past">
                       <div className="pc-head">
                         <div><div className="pc-brand-tag">{p.brand} · {fmtDate(p.date)}</div><div className="pc-name">{p.product_name}</div></div>
-                        <button className="pc-btn pc-btn-del" onClick={()=>{deleteProductDayEntry(p.id);reloadProducts()}}>🗑️</button>
+                        <button className="pc-btn pc-btn-del" onClick={()=>{removeProductEntry(p.id, false)}}>🗑️</button>
                       </div>
                       <div className="pc-metrics">
                         <div className="pc-metric"><div className="pc-metric-lbl">Qty</div><div className="pc-metric-val">{p.achieved_qty}/{p.target_qty}</div></div>
@@ -1114,14 +1251,22 @@ export default function ManagerDashboard() {
                       {isOnline ? '&#x1F7E2; Online' : '&#x1F534; Offline'}
                     </div>
                     <div style={{fontSize:'0.72rem',color:'#9CA3AF',marginTop:2}}>
-                      {isOnline ? 'Data syncing to cloud' : `${offlineQueue.length} actions queued for sync`}
+                      {isOnline ? `Last synced at ${syncLabel}` : `${offlineQueue.length} actions queued for sync`}
+                    </div>
+                    <div style={{fontSize:'0.68rem',color:'#6B7280',marginTop:4}}>
+                      Status: {manualSyncing ? 'manual sync running' : syncStatus} · Pending: {pendingSyncCount}
                     </div>
                   </div>
-                  <span style={{
-                    background:isOnline?'#ECFDF5':'#FEF2F2',
-                    color:isOnline?'#059669':'#DC2626',
-                    fontWeight:700,fontSize:'0.65rem',padding:'3px 8px',borderRadius:20
-                  }}>{isOnline?'SYNCED':'OFFLINE'}</span>
+                  <div style={{display:'flex',alignItems:'center',gap:8}}>
+                    <button onClick={syncNow} disabled={manualSyncing} style={{background:'#EFF6FF',color:'#2563EB',border:'1px solid #BFDBFE',borderRadius:8,padding:'7px 12px',fontWeight:700,fontSize:'0.72rem',cursor:manualSyncing?'not-allowed':'pointer'}}>
+                      {manualSyncing ? 'Syncing...' : 'Sync Now'}
+                    </button>
+                    <span style={{
+                      background:isOnline?'#ECFDF5':'#FEF2F2',
+                      color:isOnline?'#059669':'#DC2626',
+                      fontWeight:700,fontSize:'0.65rem',padding:'3px 8px',borderRadius:20
+                    }}>{isOnline?'SYNCED':'OFFLINE'}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1185,7 +1330,7 @@ export default function ManagerDashboard() {
                 <AutocompleteInput
                   value={vf.customer_name}
                   onChange={v => setVf(p=>({...p, customer_name:v, customer_id:null}))}
-                  onSelect={c => c && setVf(p=>({...p, customer_name:c.name, customer_id:c.id, client_type:c.type||p.client_type, location:c.address||p.location}))}
+                  onSelect={c => c && setVf(p=>({...p, customer_name:c.name, customer_id:c.id, client_type:c.type||p.client_type, location:c.address||p.location, contact_person:c.owner_name||p.contact_person, contact_phone:c.phone||p.contact_phone}))}
                   placeholder="Search customer or type new name…"
                   searchFn={searchCustomers}
                   recentsFn={getRecentCustomers}
@@ -1199,7 +1344,7 @@ export default function ManagerDashboard() {
 
               <div className="row-2">
                 <div className="fg">
-                  <label>Client Type</label>
+                  <label>Nature of Business *</label>
                   <select value={vf.client_type} onChange={e=>setVf(p=>({...p,client_type:e.target.value}))}>
                     {CLIENT_TYPES.map(t=><option key={t}>{t}</option>)}
                   </select>
@@ -1209,6 +1354,17 @@ export default function ManagerDashboard() {
                   <select value={vf.status} onChange={e=>setVf(p=>({...p,status:e.target.value}))}>
                     {VISIT_STATUSES.map(s=><option key={s}>{s}</option>)}
                   </select>
+                </div>
+              </div>
+
+              <div className="row-2">
+                <div className="fg">
+                  <label>Contact Person *</label>
+                  <input value={vf.contact_person} onChange={e=>setVf(p=>({...p,contact_person:e.target.value}))} placeholder="Owner / Contact person"/>
+                </div>
+                <div className="fg">
+                  <label>Contact Phone *</label>
+                  <input value={vf.contact_phone} onChange={e=>setVf(p=>({...p,contact_phone:e.target.value}))} placeholder="+91 9876543210"/>
                 </div>
               </div>
 
@@ -1231,7 +1387,7 @@ export default function ManagerDashboard() {
 
               {/* -- Photo Capture -- */}
               <div className="fg">
-                <label>Visit Photo <span style={{fontWeight:400,color:'#9CA3AF'}}>(optional)</span></label>
+                <label>Visit Photo *</label>
                 {photoPreview ? (
                   <div style={{position:'relative',borderRadius:10,overflow:'hidden',border:'1.5px solid #E5E7EB'}}>
                     <img src={photoPreview} alt="Visit" style={{width:'100%',height:160,objectFit:'cover',display:'block'}}/>
@@ -1397,7 +1553,7 @@ export default function ManagerDashboard() {
       {/* ---- QUICK-ADD MODALS ---- */}
       {addCustomerModal && (
         <QuickAddCustomerModal
-          onCreated={c => { setVf(p=>({...p,customer_name:c.name,customer_id:c.id,client_type:c.type,location:c.address||p.location})); toastMsg(`Customer "${c.name}" added ✅`) }}
+          onCreated={c => { setVf(p=>({...p,customer_name:c.name,customer_id:c.id,client_type:c.type,location:c.address||p.location,contact_person:c.owner_name||p.contact_person,contact_phone:c.phone||p.contact_phone})); toastMsg(`Customer "${c.name}" added ✅`) }}
           onClose={()=>setAddCustomerModal(false)}
         />
       )}

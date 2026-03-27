@@ -10,12 +10,13 @@
  */
 
 import { supabase, isSupabaseConfigured } from '../utils/supabaseClient'
-import { getOfflineQueue, flushOfflineQueue, queueOfflineAction } from '../utils/supabaseDB'
+import { getOfflineQueue, flushOfflineQueue, queueOfflineAction, syncCloudToLocal } from '../utils/supabaseDB'
 
 // ── Listeners ──────────────────────────────────────────────
 let syncInterval    = null
 let realtimeChannel = null
 let syncListeners   = []
+let lastSyncAt      = null
 
 export function onSyncStatusChange(fn) {
   syncListeners.push(fn)
@@ -24,6 +25,15 @@ export function onSyncStatusChange(fn) {
 
 function notify(status) {
   syncListeners.forEach(fn => { try { fn(status) } catch {} })
+}
+
+function markSynced(status = 'synced') {
+  lastSyncAt = new Date().toISOString()
+  notify({ status, syncing: false, count: getQueueCount(), lastSyncAt })
+}
+
+export function getLastSyncAt() {
+  return lastSyncAt
 }
 
 // ── Queue helpers ──────────────────────────────────────────
@@ -36,10 +46,20 @@ export async function trySyncQueue() {
   if (!navigator.onLine) return { synced: 0, failed: 0, pending: getQueueCount() }
   try {
     const queue = getOfflineQueue()
-    if (queue.length === 0) return { synced: 0, failed: 0, pending: 0 }
+    if (queue.length === 0) {
+      if (isSupabaseConfigured() && supabase) {
+        await syncCloudToLocal()
+        markSynced('synced')
+      }
+      return { synced: 0, failed: 0, pending: 0 }
+    }
     notify({ syncing: true, count: queue.length })
     flushOfflineQueue()
-    notify({ syncing: false, synced: queue.length, count: 0, status: 'synced' })
+    if (isSupabaseConfigured() && supabase) {
+      try { await syncCloudToLocal() } catch {}
+    }
+    lastSyncAt = new Date().toISOString()
+    notify({ syncing: false, synced: queue.length, count: 0, status: 'synced', lastSyncAt })
     return { synced: queue.length, failed: 0, pending: 0 }
   } catch (e) {
     notify({ syncing: false, error: e.message, status: 'error' })
@@ -49,6 +69,7 @@ export async function trySyncQueue() {
 
 // ── Realtime subscription (Supabase cloud mode) ────────────
 const REALTIME_TABLES = [
+  'users', 'brands', 'products',
   'visits', 'journeys', 'journey_locations',
   'status_history', 'daily_sales_reports',
   'product_day', 'customers', 'targets'
@@ -71,8 +92,9 @@ export function startRealtimeSync(onUpdate) {
     channel = channel.on(
       'postgres_changes',
       { event: '*', schema: 'public', table },
-      payload => {
+      async payload => {
         notify({ status: 'realtime', table, event: payload.eventType })
+        try { await syncCloudToLocal(); markSynced('realtime') } catch {}
         try { onUpdate(payload) } catch {}
       }
     )
@@ -90,6 +112,21 @@ export function startRealtimeSync(onUpdate) {
   return () => {
     if (realtimeChannel) supabase.removeChannel(realtimeChannel)
     realtimeChannel = null
+  }
+}
+
+export async function forceSyncNow() {
+  notify({ syncing: true, count: getQueueCount(), status: 'syncing' })
+  try {
+    const queueResult = await trySyncQueue()
+    if (isSupabaseConfigured() && supabase) {
+      await syncCloudToLocal()
+    }
+    markSynced('manual')
+    return { success: true, ...queueResult, lastSyncAt }
+  } catch (error) {
+    notify({ syncing: false, error: error.message, status: 'error', count: getQueueCount() })
+    return { success: false, message: error.message }
   }
 }
 

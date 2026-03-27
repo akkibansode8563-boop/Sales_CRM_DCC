@@ -4,7 +4,7 @@
 // territory assignment, full form with validation
 // -----------------------------------------------------------
 import { useState, useEffect } from 'react'
-import { createCustomerSync as createCustomer, getTerritories } from '../utils/supabaseDB'
+import { createCustomer, getTerritories } from '../utils/supabaseDB'
 import './AddCustomerModal.css'
 
 const CLIENT_TYPES = ['Retailer','Distributor','Wholesaler','Dealer','Direct Customer','Other']
@@ -58,7 +58,7 @@ export default function AddCustomerModal({ onCreated, onClose, createdBy }) {
     if (!form.name.trim()) return setError('Customer name is required.')
     setSubmitting(true)
     try {
-      const c = createCustomer({ ...form, created_by: createdBy || null })
+      const c = await createCustomer({ ...form, created_by: createdBy || null })
       onCreated(c)
       onClose()
     } catch(e) { setError(e.message) }

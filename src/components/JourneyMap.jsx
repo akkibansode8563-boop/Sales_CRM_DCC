@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { calcDistanceKm, calcTravelTime } from '../utils/supabaseDB'
+import { createVisitDraft, validateVisitDraft } from '../utils/visitRequirements'
 import './JourneyMap.css'
 
 let L = null
@@ -20,9 +21,22 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
   const [showForm,   setShowForm]   = useState(false)
   const [formError,  setFormError]  = useState('')
   const [isOnline,   setIsOnline]   = useState(navigator.onLine)
-  const [form, setForm] = useState({
-    client_name:'', client_type:'Retailer', location:'',
-    visit_type:'Field Visit', notes:'', latitude:null, longitude:null
+  const [photoPreview, setPhotoPreview] = useState(null)
+  const [form, setForm] = useState(() => {
+    const draft = createVisitDraft()
+    return {
+      client_name: draft.customer_name,
+      contact_person: draft.contact_person,
+      contact_phone: draft.contact_phone,
+      client_type: draft.client_type,
+      location: draft.location,
+      visit_type: draft.visit_type,
+      notes: draft.notes,
+      latitude: draft.latitude,
+      longitude: draft.longitude,
+      photo: draft.photo,
+      voice_note: draft.voice_note,
+    }
   })
 
   // Online/offline listener
@@ -173,11 +187,33 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
 
   const submitVisit = () => {
     setFormError('')
-    if (!form.client_name.trim()) { setFormError('Client name required'); return }
-    if (!form.location.trim())    { setFormError('Location required'); return }
+    const validationError = validateVisitDraft({ ...form, customer_name: form.client_name })
+    if (validationError) { setFormError(validationError); return }
     onVisitLogged({...form})
-    setForm({client_name:'',client_type:'Retailer',location:'',visit_type:'Field Visit',notes:'',latitude:null,longitude:null})
+    setForm({
+      client_name:'', contact_person:'', contact_phone:'', client_type:'Retailer', location:'',
+      visit_type:'Field Visit', notes:'', latitude:null, longitude:null, photo:null, voice_note:null
+    })
+    setPhotoPreview(null)
     setShowForm(false); setCurrentPos(null)
+  }
+
+  const capturePhoto = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/*'
+    input.capture = 'environment'
+    input.onchange = e => {
+      const file = e.target.files?.[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = ev => {
+        setForm(f => ({ ...f, photo: ev.target.result }))
+        setPhotoPreview(ev.target.result)
+      }
+      reader.readAsDataURL(file)
+    }
+    input.click()
   }
 
   const visitsWithDist = visits.map((v,i) => {
@@ -285,18 +321,28 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
               )}
               <div className="jmap-form-row">
                 <div className="jmap-fg">
-                  <label>Client Name *</label>
+                  <label>Customer Name *</label>
                   <input value={form.client_name} onChange={e=>setForm(f=>({...f,client_name:e.target.value}))} placeholder="e.g. ABC Distributors" autoFocus/>
                 </div>
                 <div className="jmap-fg">
-                  <label>Client Type</label>
+                  <label>Nature of Business *</label>
                   <select value={form.client_type} onChange={e=>setForm(f=>({...f,client_type:e.target.value}))}>
                     {CLIENT_TYPES.map(t=><option key={t}>{t}</option>)}
                   </select>
                 </div>
               </div>
+              <div className="jmap-form-row">
+                <div className="jmap-fg">
+                  <label>Contact Person *</label>
+                  <input value={form.contact_person} onChange={e=>setForm(f=>({...f,contact_person:e.target.value}))} placeholder="Owner / Contact person"/>
+                </div>
+                <div className="jmap-fg">
+                  <label>Contact Phone *</label>
+                  <input value={form.contact_phone} onChange={e=>setForm(f=>({...f,contact_phone:e.target.value}))} placeholder="+91 9876543210"/>
+                </div>
+              </div>
               <div className="jmap-fg" style={{marginBottom:8}}>
-                <label>Location *</label>
+                <label>Address *</label>
                 <div style={{display:'flex',gap:6}}>
                   <input
                     value={form.location} onChange={e=>setForm(f=>({...f,location:e.target.value}))}
@@ -335,9 +381,30 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
                 <label>Notes / Outcome</label>
                 <textarea value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Orders placed, discussions, outcomes…" rows={2}/>
               </div>
+              <div className="jmap-fg" style={{marginBottom:10}}>
+                <label>Visit Photo *</label>
+                {photoPreview ? (
+                  <div style={{position:'relative',borderRadius:'var(--r-sm)',overflow:'hidden',border:'1.5px solid #E5E7EB'}}>
+                    <img src={photoPreview} alt="Visit" style={{width:'100%',height:150,objectFit:'cover',display:'block'}}/>
+                    <button onClick={() => { setForm(f=>({...f,photo:null})); setPhotoPreview(null) }} style={{position:'absolute',top:6,right:6,background:'rgba(0,0,0,0.65)',border:'none',borderRadius:'50%',width:26,height:26,color:'#fff',cursor:'pointer'}}>×</button>
+                  </div>
+                ) : (
+                  <button onClick={capturePhoto} style={{background:'#F9FAFB',border:'1.5px dashed #D1D5DB',borderRadius:'var(--r-sm)',padding:'12px',cursor:'pointer',fontWeight:700,color:'#374151',width:'100%'}}>
+                    Take / Upload Visit Photo
+                  </button>
+                )}
+              </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 2fr',gap:8}}>
                 <button
-                  onClick={() => { setShowForm(false); setFormError('') }}
+                  onClick={() => {
+                    setShowForm(false)
+                    setFormError('')
+                    setPhotoPreview(null)
+                    setForm({
+                      client_name:'', contact_person:'', contact_phone:'', client_type:'Retailer', location:'',
+                      visit_type:'Field Visit', notes:'', latitude:null, longitude:null, photo:null, voice_note:null
+                    })
+                  }}
                   style={{background:'#F3F4F6',border:'1.5px solid #E5E7EB',borderRadius:'var(--r-md)',padding:'11px',fontWeight:700,cursor:'pointer',fontFamily:'var(--font)',color:'#374151',transform:'none',boxShadow:'none'}}
                 >
                   Cancel
