@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Launcher theme: full-screen, no title bar, brand colour status bar -->
+    <style name="Theme.DCC.Launcher" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowBackground">@color/backgroundColor</item>
+        <item name="android:statusBarColor">@color/colorPrimary</item>
+        <item name="android:navigationBarColor">@color/navigationColor</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowFullscreen">false</item>
+        <!-- Prevent flash of white before TWA launches -->
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+    </style>
+
+</resources>

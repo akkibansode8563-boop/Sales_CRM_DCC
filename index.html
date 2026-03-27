@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#2563EB" />
+  <meta name="description" content="DCC SalesForce — Field Sales Automation" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="DCC SFA" />
+
+  <!-- Preconnect to critical origins -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+  <!-- Icons -->
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+
+  <title>DCC SalesForce</title>
+
+  <script>
+    // SW version — bump this to force all clients to reload
+    const SW_VERSION = 'v11';
+    const stored = localStorage.getItem('app_sw_version');
+    if (stored !== SW_VERSION) {
+      // Clear old caches silently
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations()
+          .then(regs => regs.forEach(r => r.unregister()))
+          .catch(() => {})
+      }
+      if ('caches' in window) {
+        caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {})
+      }
+      localStorage.setItem('app_sw_version', SW_VERSION)
+      // Only hard-reload if version actually changed (not first visit)
+      if (stored) window.location.reload(true)
+    }
+    // Register SW after page load — don't block initial render
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then(reg => {
+            // Tell waiting SW to activate immediately
+            if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' })
+            reg.addEventListener('updatefound', () => {
+              const newSW = reg.installing
+              newSW?.addEventListener('statechange', () => {
+                if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+                  newSW.postMessage({ type: 'SKIP_WAITING' })
+                }
+              })
+            })
+          })
+          .catch(() => {})
+      })
+    }
+  </script>
+
+  <!-- Critical CSS inline for instant paint (prevents FOUC) -->
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;background:#F5F7FB}
+    #root{height:100%}
+    /* Skeleton loader while JS hydrates */
+    .app-loading{display:flex;align-items:center;justify-content:center;height:100vh;
+      background:linear-gradient(135deg,#0F172A,#1E3A8A)}
+    .app-loading-dot{width:10px;height:10px;border-radius:50%;background:#60A5FA;
+      animation:ldot 1.2s ease-in-out infinite;margin:0 4px}
+    .app-loading-dot:nth-child(2){animation-delay:.2s}
+    .app-loading-dot:nth-child(3){animation-delay:.4s}
+    @keyframes ldot{0%,80%,100%{transform:scale(0);opacity:.3}40%{transform:scale(1);opacity:1}}
+  </style>
+</head>
+<body>
+  <div id="root">
+    <!-- Instant loading skeleton shown before React hydrates -->
+    <div class="app-loading" id="app-skeleton">
+      <div class="app-loading-dot"></div>
+      <div class="app-loading-dot"></div>
+      <div class="app-loading-dot"></div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.jsx"></script>
+  <script>
+    // Remove skeleton once React mounts
+    window.__removeSkeleton = () => {
+      const s = document.getElementById('app-skeleton')
+      if (s) s.remove()
+    }
+  </script>
+</body>
+</html>
