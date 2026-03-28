@@ -26,7 +26,8 @@ import {
     updateCustomer,
     createBrand,
     createProduct,
-    getCurrentStatus
+    getCurrentStatus,
+    refreshSync,
   } from '../utils/supabaseDB'
 import JourneyMap from '../components/JourneyMap'
 import AutocompleteInput, {
@@ -34,6 +35,7 @@ import AutocompleteInput, {
 } from '../components/AutocompleteInput'
 import AddCustomerModal from '../components/AddCustomerModal'
 import MotivationalIntro from '../components/MotivationalIntro'
+import SyncModeBanner   from '../components/SyncModeBanner'
 import ProformaInvoice  from '../components/ProformaInvoice'
 import JourneyStartModal from '../components/JourneyStartModal'
 import dccLogo from '../assets/dcc-logo.png'
@@ -368,7 +370,12 @@ export default function ManagerDashboard() {
   }, [])
 
   useEffect(() => {
-    reload()
+    // Pull latest cloud data on mount (picks up new users, customers, visits from other devices)
+    const init = async () => {
+      try { await refreshSync() } catch {}
+      reload()
+    }
+    init()
     if (Notification?.permission === 'granted' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then(reg => {
         reg.active?.postMessage({ type: 'SCHEDULE_DAILY_REMINDER', managerName: user?.full_name })
@@ -531,17 +538,14 @@ export default function ManagerDashboard() {
         manager_id:user.id,
         visit_date:today,
         customer_id:customerId,
-        client_name:data.client_name,
-        customer_name:data.client_name,
+        client_name:data.client_name, customer_name:data.client_name,
+        contact_person:data.contact_person||'', contact_phone:data.contact_phone||'',
         client_type:data.client_type,
-        location:data.location,
-        visit_type:data.visit_type,
-        status:'Completed',
-        notes:data.notes,
-        latitude:data.latitude,
-        longitude:data.longitude,
-        photo:data.photo,
-        voice_note:data.voice_note || null,
+        location:data.location, visit_type:data.visit_type,
+        status:'Completed', notes:data.notes,
+        latitude:data.latitude, longitude:data.longitude,
+        photo:data.photo||null,
+        voice_note:data.voice_note||null,
       })
       reloadVisits(); toastMsg(`Stop #${todayVisits.length+1} logged ✅`)
     } catch (error) {
@@ -565,8 +569,10 @@ export default function ManagerDashboard() {
       const customerId = await ensureVisitCustomer(draft)
       await createVisit({
         manager_id:user.id, visit_date:today,
-        customer_id:customerId, client_name:vf.customer_name,
-        customer_name:vf.customer_name, client_type:vf.client_type,
+        customer_id:customerId,
+        client_name:vf.customer_name, customer_name:vf.customer_name,
+        contact_person:vf.contact_person||'', contact_phone:vf.contact_phone||'',
+        client_type:vf.client_type,
         location:vf.location, visit_type:vf.visit_type,
         status:vf.status, notes:vf.notes,
         latitude:c?.latitude||null, longitude:c?.longitude||null,
@@ -690,14 +696,15 @@ export default function ManagerDashboard() {
 
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
-      {/* -- Offline Banner -- */}
-      {!isOnline && (
-        <div className="offline-banner">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.4"/><path d="M7 4v3.5L9 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
-          Offline Mode — data saved locally, will sync when connected
-          {offlineQueue.length>0 && <span className="offline-queue-badge">{offlineQueue.length} pending</span>}
-        </div>
-      )}
+      {/* -- Sync Mode Banner: shows cloud vs local clearly -- */}
+      <SyncModeBanner
+        isOnline={isOnline}
+        syncStatus={syncStatus}
+        lastSyncAt={lastSyncAt}
+        pendingCount={offlineQueue.length}
+        manualSyncing={manualSyncing}
+        onSyncNow={syncNow}
+      />
 
       {/* -- Nearby Customer Suggestion -- */}
       {nearbyCustomers.length>0 && (
@@ -876,7 +883,7 @@ export default function ManagerDashboard() {
               <div className="qa-row">
                 {[
                   {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>, bg:'#EFF6FF', lbl:'Journey\nMap', fn:()=>setShowMap(true)},
-                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>, bg:'#ECFDF5', lbl:'Log\nVisit', fn:()=>{setVf(initVF());setVisitModal(true)}},
+                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>, bg:'#ECFDF5', lbl:'Log\nVisit', fn:()=>{setVf(initVF());setVisitModal(true);autoGpsOnOpen()}},
                   {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>, bg:'#FEF3C7', lbl:'Customers', fn:()=>setTab('customers')},
                   {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>, bg:'#FFFBEB', lbl:'Sales\nReport', fn:()=>{setSf(initSF());setSalesModal(true)}},
                   {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>, bg:'#F5F3FF', lbl:'Product\nEntry', fn:()=>{setEditProd(null);setPf(initPF());setProductModal(true)}},
@@ -964,7 +971,7 @@ export default function ManagerDashboard() {
           <div className="tab-pane">
             <div className="tab-hdr">
               <span className="tab-hdr-title">All Visits <span className="tab-hdr-count">({allVisits.length})</span></span>
-              <button className="btn-add" onClick={()=>{setVf(initVF());setVisitModal(true)}}>+ Log Visit</button>
+              <button className="btn-add" onClick={()=>{setVf(initVF());setVisitModal(true);autoGpsOnOpen()}}>+ Log Visit</button>
             </div>
             {allVisits.length===0
               ? <div className="empty"><div className="empty-ico">📍</div><div className="empty-txt">No visits logged yet.</div><button className="empty-cta" onClick={()=>setVisitModal(true)}>Log First Visit</button></div>
@@ -1377,7 +1384,33 @@ export default function ManagerDashboard() {
 
               <div className="fg">
                 <label>Location / Address *</label>
-                <input value={vf.location} onChange={e=>setVf(p=>({...p,location:e.target.value}))} placeholder="Area, City or full address"/>
+                <div style={{display:'flex',gap:6}}>
+                  <input
+                    value={vf.location}
+                    onChange={e=>setVf(p=>({...p,location:e.target.value}))}
+                    placeholder="Area, City or full address"
+                    style={{flex:1}}
+                  />
+                  <button
+                    type="button"
+                    onClick={async()=>{
+                      toastMsg('Getting GPS…','info')
+                      const c=await getGPS()
+                      if(c){
+                        setVf(p=>({...p,latitude:c.latitude,longitude:c.longitude}))
+                        const addr=await reverseGeo(c.latitude,c.longitude)
+                        setVf(p=>({...p,location:addr}))
+                        toastMsg('GPS location captured ✅')
+                      } else toastMsg('GPS unavailable','error')
+                    }}
+                    style={{background:'#EFF6FF',border:'1.5px solid #BFDBFE',borderRadius:8,padding:'0 12px',cursor:'pointer',color:'#2563EB',fontWeight:700,fontSize:'0.78rem',flexShrink:0,fontFamily:'inherit'}}
+                  >📡 GPS</button>
+                </div>
+                {vf.latitude && (
+                  <div style={{fontSize:'0.62rem',color:'#10B981',marginTop:3,fontFamily:'monospace'}}>
+                    ✓ GPS: {vf.latitude.toFixed(5)}, {vf.longitude.toFixed(5)}
+                  </div>
+                )}
               </div>
 
               <div className="fg">

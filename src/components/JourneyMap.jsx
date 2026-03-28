@@ -21,7 +21,13 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
   const [showForm,   setShowForm]   = useState(false)
   const [formError,  setFormError]  = useState('')
   const [isOnline,   setIsOnline]   = useState(navigator.onLine)
-  const [photoPreview, setPhotoPreview] = useState(null)
+  const [photoPreview,  setPhotoPreview]  = useState(null)
+  // Voice note — optional
+  const [isRecording,   setIsRecording]   = useState(false)
+  const [voiceNote,     setVoiceNote]     = useState(null)
+  const [recordingTime, setRecordingTime] = useState(0)
+  const [mediaRecorder, setMediaRecorder] = useState(null)
+  const [recordTimer,   setRecordTimer]   = useState(null)
   const [form, setForm] = useState(() => {
     const draft = createVisitDraft()
     return {
@@ -195,6 +201,7 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
       visit_type:'Field Visit', notes:'', latitude:null, longitude:null, photo:null, voice_note:null
     })
     setPhotoPreview(null)
+    setVoiceNote(null)
     setShowForm(false); setCurrentPos(null)
   }
 
@@ -214,6 +221,44 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
       reader.readAsDataURL(file)
     }
     input.click()
+  }
+
+  // ── Voice note recording ─────────────────────────────────
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const chunks = []
+      const rec = new MediaRecorder(stream)
+      rec.ondataavailable = e => chunks.push(e.data)
+      rec.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' })
+        const reader = new FileReader()
+        reader.onload = ev => {
+          setVoiceNote(ev.target.result)
+          setForm(f => ({ ...f, voice_note: ev.target.result }))
+        }
+        reader.readAsDataURL(blob)
+        stream.getTracks().forEach(t => t.stop())
+      }
+      rec.start()
+      setMediaRecorder(rec)
+      setIsRecording(true)
+      setRecordingTime(0)
+      const timer = setInterval(() => setRecordingTime(t => {
+        if (t >= 60) { rec.stop(); clearInterval(timer); setIsRecording(false); return t }
+        return t + 1
+      }), 1000)
+      setRecordTimer(timer)
+    } catch { setFormError('Microphone access denied') }
+  }
+  const stopRecording = () => {
+    if (mediaRecorder) mediaRecorder.stop()
+    setIsRecording(false)
+    if (recordTimer) { clearInterval(recordTimer); setRecordTimer(null) }
+  }
+  const clearVoiceNote = () => {
+    setVoiceNote(null)
+    setForm(f => ({ ...f, voice_note: null }))
   }
 
   const visitsWithDist = visits.map((v,i) => {
@@ -394,12 +439,35 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
                   </button>
                 )}
               </div>
+              {/* ── Voice Note (optional) ── */}
+              <div className="jmap-fg" style={{marginBottom:10}}>
+                <label>Voice Note <span style={{fontWeight:400,color:'#9CA3AF',fontSize:'0.62rem'}}>(optional)</span></label>
+                {voiceNote ? (
+                  <div style={{display:'flex',alignItems:'center',gap:8,padding:'9px 12px',background:'#F0FDF4',border:'1.5px solid #6EE7B7',borderRadius:'var(--r-sm)'}}>
+                    <span style={{fontSize:'1rem'}}>🎤</span>
+                    <audio controls src={voiceNote} style={{flex:1,height:30}}/>
+                    <button onClick={clearVoiceNote} style={{background:'none',border:'none',cursor:'pointer',color:'#9CA3AF',fontSize:'1rem',padding:2}}>✕</button>
+                  </div>
+                ) : isRecording ? (
+                  <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',background:'#FEF2F2',border:'1.5px solid #FECACA',borderRadius:'var(--r-sm)'}}>
+                    <span style={{width:8,height:8,borderRadius:'50%',background:'#EF4444',animation:'pulse 1s infinite',display:'inline-block'}}/>
+                    <span style={{flex:1,fontSize:'0.8rem',fontWeight:700,color:'#DC2626'}}>Recording… {recordingTime}s / 60s</span>
+                    <button onClick={stopRecording} style={{background:'#EF4444',border:'none',borderRadius:6,padding:'5px 12px',color:'#fff',fontWeight:700,fontSize:'0.75rem',cursor:'pointer',fontFamily:'inherit'}}>Stop</button>
+                  </div>
+                ) : (
+                  <button onClick={startRecording} style={{width:'100%',padding:'10px',border:'1.5px dashed #D1D5DB',borderRadius:'var(--r-sm)',background:'#F9FAFB',color:'#374151',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,fontSize:'0.8rem',fontWeight:600,fontFamily:'inherit'}}>
+                    🎤 Record Voice Note (optional)
+                  </button>
+                )}
+              </div>
+
               <div style={{display:'grid',gridTemplateColumns:'1fr 2fr',gap:8}}>
                 <button
                   onClick={() => {
                     setShowForm(false)
                     setFormError('')
                     setPhotoPreview(null)
+                    setVoiceNote(null)
                     setForm({
                       client_name:'', contact_person:'', contact_phone:'', client_type:'Retailer', location:'',
                       visit_type:'Field Visit', notes:'', latitude:null, longitude:null, photo:null, voice_note:null

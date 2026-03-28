@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import useAuthStore from '../store/authStore'
 import dccLogo from '../assets/dcc-logo.png'
+import SyncModeBanner from '../components/SyncModeBanner'
 import dccLogoWhite from '../assets/dcc-logo-white.png'
 import {
     getUsers, createUser, updateUser, deleteUser, adminSetPassword,
@@ -18,7 +19,8 @@ import {
     getTargetsSync         as getTargets,
     getJourneyHistorySync  as getJourneyHistory,
     getAllVisitsAllSync,
-    getCustomersSync
+    getCustomersSync,
+    refreshSync,
   } from '../utils/supabaseDB'
 import { lazy, Suspense } from 'react'
 import { getStorageMode, isSupabaseConfigured } from '../utils/supabaseClient'
@@ -174,7 +176,14 @@ export default function AdminDashboard() {
     productionReset(); reload(); toastMsg('Production reset complete.')
   }
 
-  useEffect(() => { reload() }, [reload])
+  useEffect(() => {
+    // Pull all cloud data into local cache on mount — ensures newly created users/visits appear
+    const init = async () => {
+      try { await refreshSync() } catch {}
+      reload()
+    }
+    init()
+  }, [reload])
   useEffect(() => {
     const unsub = subscribeToLiveUpdates(() => { setTimeout(reload, 800) })
     return unsub
@@ -422,6 +431,13 @@ useEffect(() => {
     </>
       <div className="admin-main">
 
+        <SyncModeBanner
+          isOnline={navigator.onLine}
+          syncStatus={syncStatus}
+          lastSyncAt={null}
+          pendingCount={offlineCount}
+          onSyncNow={reload}
+        />
         <div className="admin-mobile-header">
           <button className="amh-menu" onClick={()=>setSidebarOpen(true)}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 4h14M2 9h14M2 14h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>

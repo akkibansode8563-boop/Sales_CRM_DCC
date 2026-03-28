@@ -191,6 +191,12 @@ create table if not exists public.visits (
   notes         text default '',
   sale_amount   double precision default 0,
   journey_id    bigint references public.journeys(id),
+  -- Contact details captured at time of visit
+  contact_person text default '',
+  contact_phone  text default '',
+  -- Media
+  photo         text default '',
+  voice_note    text default '',
   created_at    timestamptz default now(),
   updated_at    timestamptz,
   -- year/month for fast YoY queries
@@ -407,3 +413,9 @@ on conflict do nothing;
 select setval('public.users_id_seq',    (select max(id) from public.users));
 select setval('public.brands_id_seq',   (select max(id) from public.brands));
 select setval('public.customers_id_seq',(select max(id) from public.customers));
+
+-- ─── MIGRATION: Add missing columns to visits (run if schema already deployed) ─
+ALTER TABLE public.visits ADD COLUMN IF NOT EXISTS contact_person text default '';
+ALTER TABLE public.visits ADD COLUMN IF NOT EXISTS contact_phone  text default '';
+ALTER TABLE public.visits ADD COLUMN IF NOT EXISTS photo         text default '';
+ALTER TABLE public.visits ADD COLUMN IF NOT EXISTS voice_note    text default '';
