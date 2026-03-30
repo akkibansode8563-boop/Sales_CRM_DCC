@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import useAuthStore from '../store/authStore'
 import dccLogo from '../assets/dcc-logo.png'
-import SyncModeBanner from '../components/SyncModeBanner'
+import SyncModeBanner    from '../components/SyncModeBanner'
+import CloudSetupGuide  from '../components/CloudSetupGuide'
 import dccLogoWhite from '../assets/dcc-logo-white.png'
 import {
     getUsers, createUser, updateUser, deleteUser, adminSetPassword,
@@ -40,6 +41,7 @@ import { DailySalesTrendChart, VisitBarChart, ProductBarChart, MonthlyComparison
 const Leaderboard          = lazy(() => import('../components/dashboard/Leaderboard'))
 const AIInsights           = lazy(() => import('../components/dashboard/AIInsights'))
 const CustomerIntelligence = lazy(() => import('../components/dashboard/CustomerIntelligence'))
+const CustomerDatabase     = lazy(() => import('../components/dashboard/CustomerDatabase'))
 const ProductPerformance   = lazy(() => import('../components/dashboard/ProductPerformance'))
 const ProductDayAdmin      = lazy(() => import('../components/dashboard/ProductDayAdmin'))
 // merged into main supabaseDB import above
@@ -93,6 +95,7 @@ export default function AdminDashboard() {
   const [drillDate,       setDrillDate]     = useState(new Date().toISOString().split('T')[0])
   const [filterDate,      setFilterDate]    = useState(new Date().toISOString().split('T')[0])
   const [sidebarOpen,     setSidebarOpen]   = useState(false)
+  const [showSetupGuide,  setShowSetupGuide] = useState(false)
   const [analyticsPeriod, setAnalyticsPeriod] = useState('month')
   const [analyticsDate,   setAnalyticsDate]   = useState(new Date().toISOString().split('T')[0])
   const [analyticsData,   setAnalyticsData]   = useState(null)
@@ -400,9 +403,14 @@ useEffect(() => {
                   <span style={{width:6,height:6,borderRadius:'50%',background:'#10B981',display:'inline-block'}}/>
                   Cloud sync active
                 </div>
-              : <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',background:'#FFFBEB',borderRadius:8,fontSize:'0.68rem',fontWeight:700,color:'#D97706'}}>
-                  <span style={{width:6,height:6,borderRadius:'50%',background:'#F59E0B',display:'inline-block'}}/>
-                  Local storage only
+              : <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',background:'#FFFBEB',borderRadius:8,fontSize:'0.68rem',fontWeight:700,color:'#D97706'}}>
+                    <span style={{width:6,height:6,borderRadius:'50%',background:'#F59E0B',display:'inline-block'}}/>
+                    Local storage only
+                  </div>
+                  <button onClick={()=>setShowSetupGuide(true)} style={{background:'#2563EB',color:'#fff',border:'none',borderRadius:8,padding:'8px 10px',fontSize:'0.72rem',fontWeight:800,cursor:'pointer',fontFamily:'inherit',width:'100%'}}>
+                    ☁️ Setup Cloud Sync
+                  </button>
                 </div>
             }
             {isSupabaseConfigured() && (
@@ -437,6 +445,7 @@ useEffect(() => {
           lastSyncAt={null}
           pendingCount={offlineCount}
           onSyncNow={reload}
+          onSetupCloud={() => setShowSetupGuide(true)}
         />
         <div className="admin-mobile-header">
           <button className="amh-menu" onClick={()=>setSidebarOpen(true)}>
@@ -661,13 +670,24 @@ useEffect(() => {
                               </div>
                             </div>
                             <div className="lc-metrics">
-                              <div className="lc-metric"><div className="lc-metric-val">{m.visits_today}</div><div className="lc-metric-lbl">Visits</div></div>
+                              <div className="lc-metric">
+                                <div className="lc-metric-val" style={{display:'flex',alignItems:'center',justifyContent:'center',gap:3,flexWrap:'wrap'}}>
+                                  {m.visits_today > 0
+                                    ? Array.from({length:Math.min(m.visits_today,5)}).map((_,i)=>(
+                                        <span key={i} style={{width:18,height:18,borderRadius:'50%',background:['#10B981','#F59E0B','#EF4444','#7C3AED','#EC4899'][i%5],color:'#fff',fontWeight:800,fontSize:'0.58rem',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{i+1}</span>
+                                      ))
+                                    : <span style={{color:'#9CA3AF',fontSize:'0.82rem'}}>0</span>
+                                  }
+                                  {m.visits_today > 5 && <span style={{fontSize:'0.6rem',color:'#6B7280',fontWeight:700}}>+{m.visits_today-5}</span>}
+                                </div>
+                                <div className="lc-metric-lbl">Visits ({m.visits_today})</div>
+                              </div>
                               <div className="lc-metric"><div className="lc-metric-val" style={{color:m.today_sales>0?'#2563EB':'#9CA3AF',fontSize:'0.78rem'}}>{fmt(m.today_sales)}</div><div className="lc-metric-lbl">Sales</div></div>
                               <div className="lc-metric">
                                 <div className="lc-metric-val" style={{display:'flex',alignItems:'center',justifyContent:'center'}}>
-                                  <span style={{width:10,height:10,borderRadius:'50%',background:m.active_journey?'#10B981':'#9CA3AF',display:'inline-block',flexShrink:0}}/>
+                                  <span style={{width:10,height:10,borderRadius:'50%',background:m.active_journey?'#10B981':'#9CA3AF',display:'inline-block',flexShrink:0,animation:m.active_journey?'pulse 1.5s infinite':'none'}}/>
                                 </div>
-                                <div className="lc-metric-lbl">Journey</div>
+                                <div className="lc-metric-lbl">{m.active_journey?`Active · Stop ${m.active_journey.visit_count}`:'Idle'}</div>
                               </div>
                             </div>
                             {m.last_location && (
@@ -1258,10 +1278,36 @@ useEffect(() => {
 
           {/* TAB: CUSTOMERS */}
           {tab==='customers' && (
-            <div className="panel">
-              <SectionHeader title="&#x1F3EA; Customer Intelligence" count={allCustomers.length} subtitle="Visit history, purchase patterns and priority scoring" actions={<button className="panel-action" onClick={reload}>Refresh</button>}/>
-              <div className="panel-body" style={{padding:'16px'}}>
-                <Suspense fallback={null}><CustomerIntelligence customers={allCustomers} visits={allVisitsData} managers={salesManagers}/></Suspense>
+            <div style={{display:'flex',flexDirection:'column',gap:16}}>
+              {/* ── Customer Database — full list with all fields + Excel export ── */}
+              <div className="panel">
+                <div className="panel-hdr">
+                  <div>
+                    <div className="panel-title">🏪 Customer Database</div>
+                    <div style={{fontSize:'0.7rem',color:'#9CA3AF',marginTop:2}}>
+                      All customers created by sales managers · expandable detail · Excel export
+                    </div>
+                  </div>
+                  <button className="panel-action" onClick={reload}>Refresh</button>
+                </div>
+                <div className="panel-body" style={{padding:'16px'}}>
+                  <Suspense fallback={<div style={{padding:24,color:'#9CA3AF',fontSize:'0.8rem'}}>Loading customers…</div>}>
+                    <CustomerDatabase customers={allCustomers} visits={allVisitsData} managers={salesManagers}/>
+                  </Suspense>
+                </div>
+              </div>
+
+              {/* ── Customer Intelligence (visit patterns, priority, AI) ── */}
+              <div className="panel">
+                <div className="panel-hdr">
+                  <div className="panel-title">🧠 Customer Intelligence</div>
+                  <span className="panel-count">Visit patterns & priority scoring</span>
+                </div>
+                <div className="panel-body" style={{padding:'16px'}}>
+                  <Suspense fallback={null}>
+                    <CustomerIntelligence customers={allCustomers} visits={allVisitsData} managers={salesManagers}/>
+                  </Suspense>
+                </div>
               </div>
             </div>
           )}
@@ -1465,6 +1511,9 @@ function SalesHeatmapInline({ onReplay }) {
     <>
       <button id="shm-inline-trigger" style={{display:'none'}} onClick={()=>setOpen(true)}/>
       {open && <SalesHeatmap onClose={()=>setOpen(false)}/>}
+    {showSetupGuide && (
+        <CloudSetupGuide onClose={() => setShowSetupGuide(false)}/>
+      )}
     </>
   )
 }

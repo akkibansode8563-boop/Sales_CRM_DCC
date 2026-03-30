@@ -349,6 +349,27 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
       {/* -- Log Visit Panel -- */}
       {journey && (
         <div className="jmap-log-panel">
+          {/* ── Live stop counter ── */}
+          {visits.length > 0 && (
+            <div style={{display:'flex',alignItems:'center',gap:6,padding:'7px 12px 0',flexWrap:'wrap'}}>
+              {visits.map((v,i) => (
+                <div key={v.id||i} style={{
+                  display:'flex',alignItems:'center',justifyContent:'center',
+                  width:26,height:26,borderRadius:'50%',
+                  background:STOP_COLORS[i%STOP_COLORS.length],
+                  color:'#fff',fontWeight:800,fontSize:'0.72rem',
+                  flexShrink:0,cursor:'default',
+                  title:v.client_name,
+                  boxShadow:'0 2px 6px rgba(0,0,0,0.15)',
+                }}
+                title={`Stop ${i+1}: ${v.client_name||'Unknown'}`}
+                >{i+1}</div>
+              ))}
+              <div style={{fontSize:'0.65rem',color:'#9CA3AF',fontWeight:600,marginLeft:2}}>
+                {visits.length} stop{visits.length!==1?'s':''} logged
+              </div>
+            </div>
+          )}
           {!showForm ? (
             <button className="jmap-log-btn" onClick={() => { setShowForm(true); getLocation() }}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">

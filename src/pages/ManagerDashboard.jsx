@@ -36,6 +36,7 @@ import AutocompleteInput, {
 import AddCustomerModal from '../components/AddCustomerModal'
 import MotivationalIntro from '../components/MotivationalIntro'
 import SyncModeBanner   from '../components/SyncModeBanner'
+import CloudSetupGuide from '../components/CloudSetupGuide'
 import ProformaInvoice  from '../components/ProformaInvoice'
 import JourneyStartModal from '../components/JourneyStartModal'
 import dccLogo from '../assets/dcc-logo.png'
@@ -142,6 +143,7 @@ export default function ManagerDashboard() {
   // Journey start modal
   const [showJourneyModal, setShowJourneyModal] = useState(false)
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
+  const [showSetupGuide,  setShowSetupGuide]  = useState(false)
   // Profile picture — persisted in localStorage per user
   const [profilePic, setProfilePic]         = useState(() => getStoredProfilePic(user?.id))
 
@@ -704,7 +706,9 @@ export default function ManagerDashboard() {
         pendingCount={offlineQueue.length}
         manualSyncing={manualSyncing}
         onSyncNow={syncNow}
+        onSetupCloud={() => setShowSetupGuide(true)}
       />
+      {showSetupGuide && <CloudSetupGuide onClose={() => setShowSetupGuide(false)}/>}
 
       {/* -- Nearby Customer Suggestion -- */}
       {nearbyCustomers.length>0 && (
