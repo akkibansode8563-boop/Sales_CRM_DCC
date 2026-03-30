@@ -16,6 +16,7 @@ const TERRITORY_COLORS = ['#2563EB','#10B981','#F59E0B','#EF4444','#7C3AED','#EC
 
 const fmtTime = iso => iso ? new Date(iso).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' }) : '--'
 const fmtDate = iso => iso ? new Date(iso).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) : '--'
+const todayStr = () => new Date().toISOString().split('T')[0]
 const minutesBetween = (from, to) => {
   if (!from || !to) return 0
   return Math.max(0, Math.round((new Date(to) - new Date(from)) / 60000))
@@ -36,13 +37,23 @@ async function loadLeaflet() {
   return L
 }
 
-function buildJourneyCollections(managers, managerId = null) {
+function buildJourneyCollections(managers, managerId = null, dateFrom = null, dateTo = null) {
   const scopedManagers = managerId ? managers.filter(m => m.id === managerId) : managers
-  const allVisits = (getAllVisitsAll() || []).filter(v => v?.latitude && v?.longitude)
+  const allVisits = (getAllVisitsAll() || []).filter(v => {
+    if (!v?.latitude || !v?.longitude) return false
+    if (dateFrom && v.visit_date < dateFrom) return false
+    if (dateTo && v.visit_date > dateTo) return false
+    return true
+  })
 
   return scopedManagers.flatMap((manager, managerIndex) => {
     const journeys = (getJourneyHistory(manager.id) || [])
       .slice()
+      .filter(journey => {
+        if (dateFrom && journey.date < dateFrom) return false
+        if (dateTo && journey.date > dateTo) return false
+        return true
+      })
       .sort((a, b) => new Date(b.start_time || b.created_at || 0) - new Date(a.start_time || a.created_at || 0))
 
     return journeys.map((journey, journeyIndex) => {
@@ -53,6 +64,12 @@ function buildJourneyCollections(managers, managerId = null) {
 
       const gpsTrail = (getJourneyLocations(journey.id) || [])
         .filter(point => point?.latitude && point?.longitude)
+        .filter(point => {
+          const pointDate = point?.time ? String(point.time).split('T')[0] : journey.date
+          if (dateFrom && pointDate < dateFrom) return false
+          if (dateTo && pointDate > dateTo) return false
+          return true
+        })
         .map(point => ({
           id: `gps-${journey.id}-${point.id}`,
           lat: Number(point.latitude),
@@ -183,6 +200,8 @@ export default function SalesHeatmap({ onClose }) {
   const [journeyCollections, setJourneyCollections] = useState([])
   const [selectedJourneyId, setSelectedJourneyId] = useState(null)
   const [selectedPoint, setSelectedPoint] = useState(null)
+  const [dateFrom, setDateFrom] = useState(() => todayStr())
+  const [dateTo, setDateTo] = useState(() => todayStr())
 
   useEffect(() => {
     let cancelled = false
@@ -212,16 +231,16 @@ export default function SalesHeatmap({ onClose }) {
     map.setView([19.0760, 72.8777], 10)
   }, [mapReady])
 
-  const refreshData = (managerId = null) => {
-    const data = buildJourneyCollections(managers, managerId)
+  const refreshData = (managerId = null, from = dateFrom, to = dateTo) => {
+    const data = buildJourneyCollections(managers, managerId, from, to)
     setJourneyCollections(data)
     setSelectedPoint(null)
     setSelectedJourneyId(data[0]?.id || null)
   }
 
   useEffect(() => {
-    if (managers.length > 0) refreshData(selManager?.id || null)
-  }, [managers, selManager])
+    if (managers.length > 0) refreshData(selManager?.id || null, dateFrom, dateTo)
+  }, [managers, selManager, dateFrom, dateTo])
 
   useEffect(() => {
     if (!journeyCollections.some(journey => journey.id === selectedJourneyId)) {
@@ -368,6 +387,30 @@ export default function SalesHeatmap({ onClose }) {
         <div className="shm-body">
           <div className="shm-sidebar shm-sidebar-wide">
             <div className="shm-section">
+              <div className="shm-sec-lbl">Date Range</div>
+              <div className="shm-date-grid">
+                <label className="shm-date-field">
+                  <span>From</span>
+                  <input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)} />
+                </label>
+                <label className="shm-date-field">
+                  <span>To</span>
+                  <input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)} />
+                </label>
+              </div>
+              <button
+                className="shm-reset-btn"
+                onClick={() => {
+                  const today = todayStr()
+                  setDateFrom(today)
+                  setDateTo(today)
+                }}
+              >
+                Current Date
+              </button>
+            </div>
+
+            <div className="shm-section">
               <div className="shm-sec-lbl">Map Layers</div>
               <label className="shm-toggle">
                 <input type="checkbox" checked={showVisits} onChange={e => setShowVisits(e.target.checked)}/>
@@ -406,6 +449,7 @@ export default function SalesHeatmap({ onClose }) {
                 <div className="shm-summary-card">
                   <div className="shm-summary-title">{selManager.full_name}</div>
                   <div className="shm-summary-meta">{selManager.territory || 'Unassigned territory'}</div>
+                  <div className="shm-summary-meta">Showing: {fmtDate(dateFrom)} to {fmtDate(dateTo)}</div>
                   <div className="shm-summary-grid">
                     <div><strong>{summary.totalJourneys}</strong><span>Journeys</span></div>
                     <div><strong>{summary.totalVisits}</strong><span>Logs</span></div>
@@ -443,6 +487,7 @@ export default function SalesHeatmap({ onClose }) {
                 <div className="shm-detail-card">
                   <div className="shm-detail-title">{selectedPoint.label}</div>
                   <div className="shm-detail-name">{selectedPoint.customerName}</div>
+                  <div className="shm-detail-meta">{selectedPoint.managerName} · {fmtDate(selectedPoint.date)}</div>
                   <div className="shm-detail-meta">{selectedPoint.businessType || 'Journey point'}</div>
                   <div className="shm-detail-meta">{selectedPoint.contactPerson || 'No contact'}{selectedPoint.contactPhone ? ` · ${selectedPoint.contactPhone}` : ''}</div>
                   <div className="shm-detail-meta">{selectedPoint.location}</div>

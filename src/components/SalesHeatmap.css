@@ -10,6 +10,10 @@
 .shm-sidebar-wide{width:320px;}
 .shm-section{display:flex;flex-direction:column;gap:7px;}
 .shm-sec-lbl{font-size:0.6rem;font-weight:800;color:var(--text-4);text-transform:uppercase;letter-spacing:0.08em;padding:0 4px;}
+.shm-date-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.shm-date-field{display:flex;flex-direction:column;gap:4px;font-size:0.64rem;font-weight:700;color:var(--text-3);}
+.shm-date-field input{border:1.5px solid var(--border);border-radius:9px;padding:8px 10px;background:#fff;color:var(--text-1);font-family:var(--font);font-size:0.76rem;}
+.shm-reset-btn{background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:9px;padding:8px 10px;cursor:pointer;font-size:0.72rem;font-weight:800;color:var(--primary);font-family:var(--font);}
 .shm-toggle{display:flex;align-items:center;gap:9px;cursor:pointer;padding:6px 8px;border-radius:8px;transition:background 0.1s;font-size:0.75rem;color:var(--text-2);font-weight:600;}
 .shm-toggle:hover{background:var(--surface-2);}
 .shm-toggle input{display:none;}
@@ -53,4 +57,5 @@
   .shm-sidebar,.shm-sidebar-wide{width:100%;height:auto;max-height:240px;flex-direction:row;border-right:none;border-bottom:1px solid var(--border);flex-wrap:nowrap;overflow-x:auto;padding:10px;}
   .shm-section{min-width:200px;}
   .shm-detail-stats,.shm-summary-grid{grid-template-columns:1fr;}
+  .shm-date-grid{grid-template-columns:1fr;}
 }
