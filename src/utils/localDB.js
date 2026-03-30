@@ -475,7 +475,7 @@ export function getCustomers(territory=null) {
 export function searchCustomers(query) {
   if (!query||query.length<1) return []
   const q=query.toLowerCase()
-  return (getDB().customers||[]).filter(c=>c.name.toLowerCase().includes(q)||c.type?.toLowerCase().includes(q)||c.owner_name?.toLowerCase().includes(q)).slice(0,8)
+  return (getDB().customers||[]).filter(c=>(c.name || '').toLowerCase().includes(q)||(c.type || '').toLowerCase().includes(q)||(c.owner_name || '').toLowerCase().includes(q)).slice(0,8)
 }
 export function createCustomer(data) {
   const db=getDB()

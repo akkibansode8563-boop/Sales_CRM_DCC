@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { calcDistanceKm, calcTravelTime } from '../utils/supabaseDB'
+import { calcDistanceKm, calcTravelTime, searchCustomers, getRecentCustomers } from '../utils/supabaseDB'
 import { createVisitDraft, validateVisitDraft } from '../utils/visitRequirements'
+import AutocompleteInput, { QuickAddCustomerModal } from './AutocompleteInput'
 import './JourneyMap.css'
 
 let L = null
@@ -28,6 +29,7 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
   const [recordingTime, setRecordingTime] = useState(0)
   const [mediaRecorder, setMediaRecorder] = useState(null)
   const [recordTimer,   setRecordTimer]   = useState(null)
+  const [addCustomerModal, setAddCustomerModal] = useState(false)
   const [form, setForm] = useState(() => {
     const draft = createVisitDraft()
     return {
@@ -66,17 +68,22 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
 
   // Init map
   useEffect(() => {
-    const tryInit = () => {
-      if (window.L) { L = window.L; initMap() }
-      else if (!document.getElementById('leaflet-js')) {
-        const s = document.createElement('script')
-        s.id = 'leaflet-js'; s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
-        s.onload = () => { L = window.L; initMap() }
-        document.head.appendChild(s)
-      } else setTimeout(tryInit, 200)
+    let cancelled = false
+    const loadLeaflet = async () => {
+      if (window.L) {
+        L = window.L
+      } else {
+        const mod = await import('leaflet')
+        L = mod.default || mod
+        window.L = L
+      }
+      if (!cancelled) initMap()
     }
-    tryInit()
-    return () => { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null } }
+    loadLeaflet().catch(() => setFormError('Unable to load map right now'))
+    return () => {
+      cancelled = true
+      if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null }
+    }
   }, [])
 
   const initMap = () => {
@@ -388,7 +395,28 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
               <div className="jmap-form-row">
                 <div className="jmap-fg">
                   <label>Customer Name *</label>
-                  <input value={form.client_name} onChange={e=>setForm(f=>({...f,client_name:e.target.value}))} placeholder="e.g. ABC Distributors" autoFocus/>
+                  <AutocompleteInput
+                    value={form.client_name}
+                    onChange={value => setForm(f => ({ ...f, client_name: value }))}
+                    onSelect={customer => customer && setForm(f => ({
+                      ...f,
+                      client_name: customer.name,
+                      contact_person: customer.owner_name || f.contact_person,
+                      contact_phone: customer.phone || f.contact_phone,
+                      client_type: customer.type || f.client_type,
+                      location: customer.address || f.location,
+                      latitude: customer.latitude ?? f.latitude,
+                      longitude: customer.longitude ?? f.longitude,
+                    }))}
+                    placeholder="Search customer or type new name..."
+                    searchFn={searchCustomers}
+                    recentsFn={getRecentCustomers}
+                    renderItem={customer => <span className="ac-item-name">{customer.name}</span>}
+                    renderMeta={customer => <span className="ac-type-tag">{customer.type}</span>}
+                    addNewLabel="+ Add New Customer"
+                    onAddNew={() => setAddCustomerModal(true)}
+                    autoFocus
+                  />
                 </div>
                 <div className="jmap-fg">
                   <label>Nature of Business *</label>
@@ -563,6 +591,24 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
           <div className="jmap-error-msg">No active journey.<br/>Start a journey from the Home tab to enable GPS tracking and route mapping.</div>
           <span className="jmap-error-link" onClick={onClose}>← Back to Dashboard</span>
         </div>
+      )}
+      {addCustomerModal && (
+        <QuickAddCustomerModal
+          onCreated={customer => {
+            setForm(f => ({
+              ...f,
+              client_name: customer.name,
+              contact_person: customer.owner_name || '',
+              contact_phone: customer.phone || '',
+              client_type: customer.type || f.client_type,
+              location: customer.address || '',
+              latitude: customer.latitude ?? f.latitude,
+              longitude: customer.longitude ?? f.longitude,
+            }))
+            setAddCustomerModal(false)
+          }}
+          onClose={() => setAddCustomerModal(false)}
+        />
       )}
     </div>
   )

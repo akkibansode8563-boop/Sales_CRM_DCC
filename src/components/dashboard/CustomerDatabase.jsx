@@ -17,7 +17,8 @@ export default memo(function CustomerDatabase({ customers = [], visits = [], man
 
   // ── Enrich customer data with visit history ─────────────────
   const enriched = useMemo(() => customers.map(c => {
-    const cVisits  = visits.filter(v => v.customer_id === c.id)
+    const customerName = (c.name || '').trim().toLowerCase()
+    const cVisits  = visits.filter(v => v.customer_id === c.id || (!v.customer_id && (v.customer_name || v.client_name || '').trim().toLowerCase() === customerName))
     const sorted   = [...cVisits].sort((a,b) => new Date(b.created_at) - new Date(a.created_at))
     const lastVisit= sorted[0] || null
     const totalSales = cVisits.reduce((s,v) => s + (v.sale_amount||0), 0)
@@ -35,11 +36,11 @@ export default memo(function CustomerDatabase({ customers = [], visits = [], man
     if (search) {
       const q = search.toLowerCase()
       list = list.filter(c =>
-        c.name?.toLowerCase().includes(q) ||
-        c.owner_name?.toLowerCase().includes(q) ||
-        c.phone?.includes(q) ||
-        c.address?.toLowerCase().includes(q) ||
-        c.territory?.toLowerCase().includes(q)
+        (c.name || '').toLowerCase().includes(q) ||
+        (c.owner_name || '').toLowerCase().includes(q) ||
+        (c.phone || '').includes(q) ||
+        (c.address || '').toLowerCase().includes(q) ||
+        (c.territory || '').toLowerCase().includes(q)
       )
     }
     if (typeFilter !== 'all') list = list.filter(c => c.type === typeFilter)
@@ -47,7 +48,7 @@ export default memo(function CustomerDatabase({ customers = [], visits = [], man
       if (sortBy === 'last_visit') return (b.lastVisit ? new Date(b.lastVisit.created_at) : 0) - (a.lastVisit ? new Date(a.lastVisit.created_at) : 0)
       if (sortBy === 'visits')   return b.cVisits.length - a.cVisits.length
       if (sortBy === 'sales')    return b.totalSales - a.totalSales
-      if (sortBy === 'name')     return a.name.localeCompare(b.name)
+      if (sortBy === 'name')     return (a.name || '').localeCompare(b.name || '')
       if (sortBy === 'priority') { const p={none:0,high:1,medium:2,low:3}; return p[a.priority]-p[b.priority] }
       return 0
     })

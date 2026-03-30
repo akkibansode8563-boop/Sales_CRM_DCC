@@ -63,6 +63,15 @@ const fmt          = v => v ? '\u20B9' + Number(v).toLocaleString('en-IN') : '\u
 const fmtTime      = iso => iso ? new Date(iso).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : '--'
 const fmtDate      = iso => iso ? new Date(iso).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '--'
 const fmtDateShort = iso => iso ? new Date(iso).toLocaleDateString('en-IN',{day:'numeric',month:'short'}) : '--'
+const getVisitCustomerName = visit => visit?.client_name || visit?.customer_name || 'Unknown Customer'
+const getVisitCustomerMeta = visit => {
+  const meta = [visit?.client_type, visit?.contact_person, visit?.contact_phone].filter(Boolean)
+  return meta.length ? meta.join(' \u00B7 ') : 'Customer details unavailable'
+}
+const getVisitLocationLabel = visit => {
+  const location = visit?.location || ''
+  return location ? location.split(',').slice(0, 2).join(', ') : 'Location unavailable'
+}
 
 const NAV = [
   { id:'overview',  lbl:'Overview',  ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> },
@@ -246,8 +255,8 @@ export default function AdminDashboard() {
 
   const buildManagerData = useCallback((date=today) => {
     return salesManagers.map((m,i) => {
-      const mVisits = getAllVisits(m.id) || []
-      const dayVisits   = mVisits.filter(v=>v.visit_date===date)
+      const mVisits = visitBuckets.byManager.get(m.id) || getAllVisits(m.id) || []
+      const dayVisits = visitBuckets.byManagerDate.get(`${m.id}::${date}`) || mVisits.filter(v=>v.visit_date===date)
       const reports = getDailySalesReports(m.id) || []
       const dayReport   = reports.find(r=>r.date===date)
      const allProds = getProductDayEntries(m.id) || []
@@ -265,10 +274,11 @@ export default function AdminDashboard() {
         ...m, color: AVATAR_COLORS[i%AVATAR_COLORS.length],
         dayVisits, dayReport, dayProducts, monthTarget, journeys, liveData,
         salesPct, visitPct, totalProdAchieved, totalProdTarget,
+        latestVisit: visitBuckets.latestByManager.get(m.id) || null,
         allVisitsCount: mVisits.length, totalReports: reports.length, totalProducts: allProds.length,
       }
     })
-  }, [salesManagers, managers, today])
+  }, [salesManagers, managers, today, visitBuckets])
 const [managerRows, setManagerRows] = useState([])
 useEffect(() => {
   if (!salesManagers || salesManagers.length === 0) {
@@ -318,6 +328,36 @@ useEffect(() => {
     const a = getAnalytics(null, leaderPeriod, filterDate)
     return a ? a.managerStats : []
   }, [leaderPeriod, filterDate])
+  const visitBuckets = useMemo(() => {
+    const byManager = new Map()
+    const byManagerDate = new Map()
+    const latestByManager = new Map()
+
+    ;(allVisitsData || []).forEach(visit => {
+      const managerId = visit?.manager_id
+      if (managerId == null) return
+
+      if (!byManager.has(managerId)) byManager.set(managerId, [])
+      byManager.get(managerId).push(visit)
+
+      const visitDate = visit?.visit_date || (visit?.created_at ? String(visit.created_at).split('T')[0] : '')
+      if (visitDate) {
+        const key = `${managerId}::${visitDate}`
+        if (!byManagerDate.has(key)) byManagerDate.set(key, [])
+        byManagerDate.get(key).push(visit)
+      }
+
+      const currentLatest = latestByManager.get(managerId)
+      if (!currentLatest || new Date(visit?.created_at || 0) > new Date(currentLatest?.created_at || 0)) {
+        latestByManager.set(managerId, visit)
+      }
+    })
+
+    byManager.forEach(list => list.sort((a, b) => new Date(a?.created_at || 0) - new Date(b?.created_at || 0)))
+    byManagerDate.forEach(list => list.sort((a, b) => new Date(a?.created_at || 0) - new Date(b?.created_at || 0)))
+
+    return { byManager, byManagerDate, latestByManager }
+  }, [allVisitsData])
 
   const openDrilldown = (mgr) => {
     setDrillManager(mgr); setDrillDate(filterDate); setTab('drilldown'); setSidebarOpen(false)
@@ -656,6 +696,7 @@ useEffect(() => {
                     : <div className="live-grid">
                       {managers.map((m,i) => {
                         const sm = STATUS_META[m.status] || STATUS_META['In-Office']
+                        const latestVisit = visitBuckets.latestByManager.get(m.id)
                         return (
                           <div key={m.id} className="live-card" onClick={()=>openDrilldown(m)}>
                             <div className="lc-top">
@@ -692,6 +733,13 @@ useEffect(() => {
                             </div>
                             {m.last_location && (
                               <div className="lc-location">&#x1F4CD; {(m.last_location?.name||'').split(',').slice(0,2).join(', ')} &middot; {fmtTime(m.last_location?.time)}</div>
+                            )}
+                            {latestVisit && (
+                              <div className="lc-customer">
+                                <div className="lc-customer-name">Visit {m.visits_today || 1}: {getVisitCustomerName(latestVisit)}</div>
+                                <div className="lc-customer-meta">{getVisitCustomerMeta(latestVisit)}</div>
+                                <div className="lc-customer-location">&#x1F4CD; {getVisitLocationLabel(latestVisit)}</div>
+                              </div>
                             )}
                             <div className="lc-drill-hint">Tap for full detail &#x2192;</div>
                           </div>
@@ -770,8 +818,10 @@ useEffect(() => {
                                 <div key={v.id} className="mfc-visit-row">
                                   <span className="mfc-visit-num" style={{background:AVATAR_COLORS[i%AVATAR_COLORS.length]}}>{i+1}</span>
                                   <div className="mfc-visit-body">
-                                    <div className="mfc-visit-name">{v.client_name||v.customer_name}</div>
-                                    <div className="mfc-visit-meta">{v.client_type}&nbsp;&nbsp;{v.location?.split(',')[0]}</div>
+                                    <div className="mfc-visit-label">Visit {i+1}</div>
+                                    <div className="mfc-visit-name">{getVisitCustomerName(v)}</div>
+                                    <div className="mfc-visit-meta">{getVisitCustomerMeta(v)}</div>
+                                    <div className="mfc-visit-meta">{getVisitLocationLabel(v)}</div>
                                   </div>
                                   <span className="mfc-visit-time">{fmtTime(v.created_at)}</span>
                                 </div>
@@ -924,11 +974,14 @@ useEffect(() => {
                               <div key={v.id} className="dd-visit-row">
                                 <div className="ddv-num" style={{background:AVATAR_COLORS[i%AVATAR_COLORS.length]}}>{i+1}</div>
                                 <div className="ddv-body">
-                                  <div className="ddv-name">{v.client_name||v.customer_name}</div>
+                                  <div className="ddv-label">Visit {i+1}</div>
+                                  <div className="ddv-name">{getVisitCustomerName(v)}</div>
                                   <div className="ddv-meta">
                                     <span className="ddv-tag">{v.client_type}</span>
-                                    <span>{v.location?.split(',')[0]}</span>
+                                    <span>{v.contact_person || 'No contact'}</span>
+                                    <span>{v.contact_phone || 'No phone'}</span>
                                   </div>
+                                  <div className="ddv-meta"><span>{getVisitLocationLabel(v)}</span></div>
                                   {v.notes && <div className="ddv-notes">{v.notes}</div>}
                                   <div className="ddv-type">{v.visit_type}</div>
                                 </div>
@@ -1500,20 +1553,11 @@ useEffect(() => {
       )}
 
       {showReplay && <Suspense fallback={<div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.5)',zIndex:9999,color:'#fff',fontSize:'1rem',fontWeight:700}}>Loading Replay...</div>}><JourneyReplay onClose={()=>setShowReplay(false)}/></Suspense>}
-      {tab==='heatmap' && <SalesHeatmapInline onReplay={()=>setShowReplay(true)}/>}
+      {tab==='heatmap' && <SalesHeatmapInline onClose={()=>setTab('overview')}/>}
     </div>
   )
 }
 
-function SalesHeatmapInline({ onReplay }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <>
-      <button id="shm-inline-trigger" style={{display:'none'}} onClick={()=>setOpen(true)}/>
-      {open && <SalesHeatmap onClose={()=>setOpen(false)}/>}
-    {showSetupGuide && (
-        <CloudSetupGuide onClose={() => setShowSetupGuide(false)}/>
-      )}
-    </>
-  )
+function SalesHeatmapInline({ onClose }) {
+  return <SalesHeatmap onClose={onClose}/>
 }

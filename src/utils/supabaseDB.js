@@ -577,7 +577,13 @@ export async function searchCustomers(query) {
   if (!USE_CLOUD()) return local.searchCustomers(query)
   try {
     if (!query || query.length < 1) return []
-    const { data } = await supabase.from('customers').select('*').or(`name.ilike.%${query}%,type.ilike.%${query}%,owner_name.ilike.%${query}%`).limit(8)
+    const term = query.trim()
+    const { data } = await supabase
+      .from('customers')
+      .select('id,name,owner_name,phone,type,address,territory,latitude,longitude')
+      .or(`name.ilike.%${term}%,type.ilike.%${term}%,owner_name.ilike.%${term}%`)
+      .order('name', { ascending: true })
+      .limit(8)
     return data || []
   } catch { return local.searchCustomers(query) }
 }

@@ -14,19 +14,16 @@ let L = null
 const AVATAR_COLORS = ['#2563EB','#10B981','#F59E0B','#EF4444','#7C3AED','#EC4899','#06B6D4','#F97316']
 const TERRITORY_COLORS = ['#2563EB','#10B981','#F59E0B','#EF4444','#7C3AED','#EC4899','#06B6D4','#F97316','#84CC16','#8B5CF6']
 
-function loadLeaflet(cb) {
-  if (window.L) { L = window.L; cb(); return }
+async function loadLeaflet() {
+  if (window.L) { L = window.L; return L }
   if (!document.getElementById('leaflet-css')) {
     const lnk = document.createElement('link'); lnk.id='leaflet-css'; lnk.rel='stylesheet'
     lnk.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(lnk)
   }
-  if (!document.getElementById('leaflet-js')) {
-    const s = document.createElement('script'); s.id='leaflet-js'
-    s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
-    s.onload=()=>{L=window.L;cb()}; document.head.appendChild(s)
-  } else {
-    const chk=setInterval(()=>{if(window.L){clearInterval(chk);L=window.L;cb()}},200)
-  }
+  const mod = await import('leaflet')
+  L = mod.default || mod
+  window.L = L
+  return L
 }
 
 export default function SalesHeatmap({ onClose }) {
@@ -42,11 +39,19 @@ export default function SalesHeatmap({ onClose }) {
   const [showGPS,      setShowGPS]      = useState(false)
 
   useEffect(() => {
+    let cancelled = false
     const mgrs = getUsers('Sales Manager')
     setManagers(mgrs)
     setTerrStats(getTerritoryStats())
-    loadLeaflet(() => setMapReady(true))
-    return () => { if (mapInst.current) { mapInst.current.remove(); mapInst.current = null } }
+    loadLeaflet().then(() => {
+      if (!cancelled) setMapReady(true)
+    }).catch(() => {
+      if (!cancelled) setHeatData([])
+    })
+    return () => {
+      cancelled = true
+      if (mapInst.current) { mapInst.current.remove(); mapInst.current = null }
+    }
   }, [])
 
   useEffect(() => {

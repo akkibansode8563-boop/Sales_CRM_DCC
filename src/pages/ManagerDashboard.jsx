@@ -137,6 +137,15 @@ export default function ManagerDashboard() {
   const [pendingSyncCount, setPendingSyncCount] = useState(() => getQueueCount())
   const [lastSyncAt, setLastSyncAt]         = useState(() => getLastSyncAt())
   const [manualSyncing, setManualSyncing]   = useState(false)
+  const filteredCustomers = useMemo(() => {
+    const query = customerFilter.trim().toLowerCase()
+    if (!query) return customers
+    return customers.filter(c =>
+      (c?.name || '').toLowerCase().includes(query) ||
+      (c?.owner_name || '').toLowerCase().includes(query) ||
+      (c?.phone || '').includes(query)
+    )
+  }, [customers, customerFilter])
 
   // Motivational intro — show once per session
   const [showIntro, setShowIntro]           = useState(getInitialIntroVisibility)
@@ -995,7 +1004,7 @@ export default function ManagerDashboard() {
                   <div className="vc-loc"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="5" r="2" stroke="#9CA3AF" strokeWidth="1.2"/><path d="M6 2a3 3 0 013 3c0 2.5-3 6-3 6S3 7.5 3 5a3 3 0 013-3z" stroke="#9CA3AF" strokeWidth="1.2"/></svg>{v.location}</div>
                   <StatusChip s={v.status||'Completed'}/>
                   {v.notes && <div className="vc-notes">&#x1F4AC; {v.notes}</div>}
-                  {v.photo && <img src={v.photo} alt="Visit" style={{width:'100%',maxHeight:140,objectFit:'cover',borderRadius:8,marginTop:8}}/>}
+                  {v.photo && <img src={v.photo} alt="Visit" loading="lazy" style={{width:'100%',maxHeight:140,objectFit:'cover',borderRadius:8,marginTop:8}}/>}
                   {v.voice_note && (
                     <div style={{marginTop:8,display:'flex',alignItems:'center',gap:6,padding:'7px 10px',background:'#F0FDF4',borderRadius:8,border:'1px solid #6EE7B7'}}>
                       <span style={{fontSize:'0.9rem'}}>&#x1F3A4;</span>
@@ -1122,7 +1131,7 @@ export default function ManagerDashboard() {
             </div>
             {customers.length===0
               ? <div className="empty"><div className="empty-ico">🏪</div><div className="empty-txt">No customers yet.</div><button className="empty-cta" onClick={()=>setShowAddCustomer(true)}>Add First Customer</button></div>
-              : customers.filter(c=>!customerFilter||c.name.toLowerCase().includes(customerFilter.toLowerCase())||c.owner_name?.toLowerCase().includes(customerFilter.toLowerCase())).map(c=>(
+              : filteredCustomers.map(c=>(
                 <div key={c.id} className="customer-card">
                   <div className="cc-top">
                     <div className="cc-avatar">{c.name?.[0]}</div>
