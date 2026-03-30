@@ -252,6 +252,36 @@ export default function AdminDashboard() {
   const totalVisitsToday = Array.isArray(managers) ? managers.reduce((s,m)=>s+(m.visits_today||0),0) : 0
   const activeJourneys   = Array.isArray(managers) ? managers.filter(m=>m.active_journey).length : 0
   const totalSalesToday  = Array.isArray(managers) ? managers.reduce((s,m)=>s+(m.today_sales||0),0) : 0
+  const visitBuckets = useMemo(() => {
+    const byManager = new Map()
+    const byManagerDate = new Map()
+    const latestByManager = new Map()
+
+    ;(allVisitsData || []).forEach(visit => {
+      const managerId = visit?.manager_id
+      if (managerId == null) return
+
+      if (!byManager.has(managerId)) byManager.set(managerId, [])
+      byManager.get(managerId).push(visit)
+
+      const visitDate = visit?.visit_date || (visit?.created_at ? String(visit.created_at).split('T')[0] : '')
+      if (visitDate) {
+        const key = `${managerId}::${visitDate}`
+        if (!byManagerDate.has(key)) byManagerDate.set(key, [])
+        byManagerDate.get(key).push(visit)
+      }
+
+      const currentLatest = latestByManager.get(managerId)
+      if (!currentLatest || new Date(visit?.created_at || 0) > new Date(currentLatest?.created_at || 0)) {
+        latestByManager.set(managerId, visit)
+      }
+    })
+
+    byManager.forEach(list => list.sort((a, b) => new Date(a?.created_at || 0) - new Date(b?.created_at || 0)))
+    byManagerDate.forEach(list => list.sort((a, b) => new Date(a?.created_at || 0) - new Date(b?.created_at || 0)))
+
+    return { byManager, byManagerDate, latestByManager }
+  }, [allVisitsData])
 
   const buildManagerData = useCallback((date=today) => {
     return salesManagers.map((m,i) => {
@@ -328,36 +358,6 @@ useEffect(() => {
     const a = getAnalytics(null, leaderPeriod, filterDate)
     return a ? a.managerStats : []
   }, [leaderPeriod, filterDate])
-  const visitBuckets = useMemo(() => {
-    const byManager = new Map()
-    const byManagerDate = new Map()
-    const latestByManager = new Map()
-
-    ;(allVisitsData || []).forEach(visit => {
-      const managerId = visit?.manager_id
-      if (managerId == null) return
-
-      if (!byManager.has(managerId)) byManager.set(managerId, [])
-      byManager.get(managerId).push(visit)
-
-      const visitDate = visit?.visit_date || (visit?.created_at ? String(visit.created_at).split('T')[0] : '')
-      if (visitDate) {
-        const key = `${managerId}::${visitDate}`
-        if (!byManagerDate.has(key)) byManagerDate.set(key, [])
-        byManagerDate.get(key).push(visit)
-      }
-
-      const currentLatest = latestByManager.get(managerId)
-      if (!currentLatest || new Date(visit?.created_at || 0) > new Date(currentLatest?.created_at || 0)) {
-        latestByManager.set(managerId, visit)
-      }
-    })
-
-    byManager.forEach(list => list.sort((a, b) => new Date(a?.created_at || 0) - new Date(b?.created_at || 0)))
-    byManagerDate.forEach(list => list.sort((a, b) => new Date(a?.created_at || 0) - new Date(b?.created_at || 0)))
-
-    return { byManager, byManagerDate, latestByManager }
-  }, [allVisitsData])
 
   const openDrilldown = (mgr) => {
     setDrillManager(mgr); setDrillDate(filterDate); setTab('drilldown'); setSidebarOpen(false)
