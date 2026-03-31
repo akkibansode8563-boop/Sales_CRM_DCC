@@ -213,8 +213,9 @@ export default function AdminDashboard() {
   useEffect(() => {
     // Pull all cloud data into local cache on mount — ensures newly created users/visits appear
     const init = async () => {
+      reload() // Render instantly from cache
       try { await refreshSync() } catch {}
-      reload()
+      reload() // Re-render after cloud sync completes
     }
     init()
   }, [reload])
@@ -1579,8 +1580,11 @@ useEffect(() => {
         <CloudSetupGuide onClose={() => setShowSetupGuide(false)}/>
       )}
       {showReplay && <Suspense fallback={<div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.5)',zIndex:9999,color:'#fff',fontSize:'1rem',fontWeight:700}}>Loading Replay...</div>}><JourneyReplay onClose={()=>setShowReplay(false)}/></Suspense>}
-      {tab==='heatmap' && <SalesHeatmapInline onReplay={()=>setShowReplay(true)}/>}
+      {tab==='heatmap' && (
+        <Suspense fallback={<div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.5)',zIndex:9999,color:'#fff',fontSize:'1rem',fontWeight:700}}>Loading Heatmap...</div>}>
+          <SalesHeatmap onClose={() => setTab('overview')} onReplay={() => setShowReplay(true)} />
+        </Suspense>
+      )}
     </div>
   )
 }
-
