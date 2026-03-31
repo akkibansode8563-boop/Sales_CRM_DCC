@@ -114,6 +114,7 @@ export default function AdminDashboard() {
   const [auditLogsData,   setAuditLogsData]   = useState([])
   const [offlineCount,    setOfflineCount]    = useState(0)
   const [syncStatus,      setSyncStatus]      = useState('idle')
+  const [isSyncing,       setIsSyncing]       = useState(false)
   const [lastSyncAt,      setLastSyncAt]      = useState(() => getLastSyncAt())
   const [manualSyncing,   setManualSyncing]   = useState(false)
 
@@ -211,12 +212,13 @@ export default function AdminDashboard() {
   }
 
   useEffect(() => {
-    // Pull all cloud data into local cache on mount — ensures newly created users/visits appear
-    const init = async () => {
-      try { await refreshSync() } catch {}
-      reload()
-    }
-    init()
+    // Render instantly from local cache (shows stale data immediately)
+    reload()
+    // Background sync: fires after paint — never blocks the dashboard
+    setIsSyncing(true)
+    refreshSync()
+      .then(() => { reload(); setIsSyncing(false) })
+      .catch(() =>  setIsSyncing(false))
   }, [reload])
   useEffect(() => {
     const unsub = subscribeToLiveUpdates(() => reload())
@@ -482,6 +484,7 @@ useEffect(() => {
           syncStatus={syncStatus}
           lastSyncAt={null}
           pendingCount={offlineCount}
+          isSyncing={isSyncing}
           onSyncNow={reload}
           onSetupCloud={() => setShowSetupGuide(true)}
         />
@@ -1579,8 +1582,11 @@ useEffect(() => {
         <CloudSetupGuide onClose={() => setShowSetupGuide(false)}/>
       )}
       {showReplay && <Suspense fallback={<div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.5)',zIndex:9999,color:'#fff',fontSize:'1rem',fontWeight:700}}>Loading Replay...</div>}><JourneyReplay onClose={()=>setShowReplay(false)}/></Suspense>}
-      {tab==='heatmap' && <SalesHeatmapInline onReplay={()=>setShowReplay(true)}/>}
+      {tab==='heatmap' && (
+        <Suspense fallback={<div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.5)',zIndex:9999,color:'#fff',fontSize:'1rem',fontWeight:700}}>Loading Heatmap...</div>}>
+          <SalesHeatmap onClose={() => setTab('overview')} onReplay={() => setShowReplay(true)} />
+        </Suspense>
+      )}
     </div>
   )
 }
-

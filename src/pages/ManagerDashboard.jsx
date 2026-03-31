@@ -134,6 +134,7 @@ export default function ManagerDashboard() {
   // Notifications
   const [notifPerm, setNotifPerm]           = useState(getInitialNotificationPermission)
   const [syncStatus, setSyncStatus]         = useState('idle')
+  const [isSyncing,   setIsSyncing]          = useState(false)
   const [pendingSyncCount, setPendingSyncCount] = useState(() => getQueueCount())
   const [lastSyncAt, setLastSyncAt]         = useState(() => getLastSyncAt())
   const [manualSyncing, setManualSyncing]   = useState(false)
@@ -373,11 +374,13 @@ export default function ManagerDashboard() {
 
   useEffect(() => {
     // Pull latest cloud data on mount (picks up new users, customers, visits from other devices)
-    const init = async () => {
-      try { await refreshSync() } catch {}
-      reload()
-    }
-    init()
+    // Render instantly from local cache (no wait, no spinner)
+    reload()
+    // Background sync — shows thin banner, never blocks
+    setIsSyncing(true)
+    refreshSync()
+      .then(() => { reload(); setIsSyncing(false) })
+      .catch(() =>  setIsSyncing(false))
     if (Notification?.permission === 'granted' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then(reg => {
         reg.active?.postMessage({ type: 'SCHEDULE_DAILY_REMINDER', managerName: user?.full_name })
@@ -705,6 +708,7 @@ export default function ManagerDashboard() {
         lastSyncAt={lastSyncAt}
         pendingCount={offlineQueue.length}
         manualSyncing={manualSyncing}
+        isSyncing={isSyncing}
         onSyncNow={syncNow}
         onSetupCloud={() => setShowSetupGuide(true)}
       />
