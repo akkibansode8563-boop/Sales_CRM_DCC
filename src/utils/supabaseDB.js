@@ -886,3 +886,17 @@ export function saveDailySalesReportSync(...args) { return local.saveDailySalesR
 export function createProductDayEntrySync(...args) { return local.createProductDayEntry(...args) }
 export function updateProductDayEntrySync(...args) { return local.updateProductDayEntry(...args) }
 export function deleteProductDayEntrySync(...args) { return local.deleteProductDayEntry(...args) }
+// ================= AUDIT LOGS =================
+export async function getAuditLogs() {
+  const { data, error } = await supabase
+    .from('audit_logs')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching audit logs:', error);
+    return [];
+  }
+
+  return data;
+}
