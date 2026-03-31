@@ -986,8 +986,11 @@ export function shouldShowAlerts() {
   if (day === 0) return false // Sunday
   const hours = now.getHours()
   const mins = now.getMinutes()
-  // Show from 11:00 AM IST onwards
-  return (hours > 11 || (hours === 11 && mins >= 0))
+  // Show from 11:30 AM onwards based on user spec:
+  // "maximum office time is 10:00 AM and on field sale manager can start visit 11:00 AM so notification message need to be at 11:30 AM"
+  if (hours > 11) return true
+  if (hours === 11 && mins >= 30) return true
+  return false
 }
 
 export function getAlertDismissKey() {
@@ -1058,3 +1061,5 @@ export function getTerritoryStats() {
   })
   return Object.values(territories).sort((a,b) => b.visits_total - a.visits_total)
 }
+
+    
