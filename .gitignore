@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+mcp-server/node_modules/
+
+# Build output
+dist/
+.vercel/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Old HTML files (not needed in repo)
+dashboard-admin.html
+dashboard-manager.html
+dashboard-manager-journey.html
+daily-sales-report.html
+journey-map.html
+product-day.html
+login.html
+export-utils.js

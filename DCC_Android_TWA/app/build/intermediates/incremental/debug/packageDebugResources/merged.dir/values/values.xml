@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="backgroundColor">#F5F7FB</color>
+    <color name="colorAccent">#10B981</color>
+    <color name="colorPrimary">#2563EB</color>
+    <color name="colorPrimaryDark">#1E40AF</color>
+    <color name="navigationColor">#2563EB</color>
+    <color name="navigationColorDark">#1E40AF</color>
+    <color name="navigationDividerColor">#2563EB</color>
+    <color name="navigationDividerColorDark">#1E40AF</color>
+    <color name="windowBackground">#FFFFFF</color>
+    <string name="app_name">DCC SalesForce</string>
+    <string name="host_url">https://sales-crm-dcc.vercel.app</string>
+    <string name="short_name">DCC SFA</string>
+    <style name="Theme.DCC.Launcher" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowBackground">@color/backgroundColor</item>
+        <item name="android:statusBarColor">@color/colorPrimary</item>
+        <item name="android:navigationBarColor">@color/navigationColor</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowFullscreen">false</item>
+        
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+    </style>
+</resources>

@@ -1,0 +1,151 @@
+/* -------------------------------------------
+   JOURNEY MAP — Light enterprise overlay
+   ------------------------------------------- */
+
+.jmap-wrap {
+  position: fixed; inset: 0; z-index: 500;
+  display: flex; flex-direction: column;
+  background: var(--bg); font-family: var(--font);
+}
+
+/* Header */
+.jmap-header {
+  background: #fff; border-bottom: 1.5px solid var(--border);
+  padding: 12px 18px; display: flex; align-items: center;
+  justify-content: space-between; gap: 12px;
+  box-shadow: var(--shadow-sm); z-index: 10; flex-shrink: 0;
+}
+.jmap-hdr-left { display: flex; align-items: center; gap: 11px; }
+.jmap-hdr-ico {
+  width: 38px; height: 38px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  border-radius: 11px; display: flex; align-items: center;
+  justify-content: center; font-size: 1rem; flex-shrink: 0;
+  box-shadow: var(--shadow-primary);
+}
+.jmap-hdr-title { font-family: var(--font-display); font-size: 0.95rem; font-weight: 900; color: var(--text-1); }
+.jmap-hdr-sub   { font-size: 0.65rem; color: var(--text-3); margin-top: 1px; }
+.jmap-close {
+  background: var(--surface-2); border: 1.5px solid var(--border);
+  border-radius: var(--r-md); padding: 8px 14px;
+  font-size: 0.78rem; font-weight: 700; color: var(--text-2);
+  cursor: pointer; font-family: var(--font);
+  display: flex; align-items: center; gap: 6px;
+  transition: all var(--t-fast); transform: none !important; box-shadow: none !important;
+}
+.jmap-close:hover { border-color: var(--danger); color: var(--danger); background: var(--danger-light); }
+
+/* Map container */
+.jmap-map { flex: 1; position: relative; }
+.jmap-map .leaflet-container { height: 100%; width: 100%; }
+
+/* Stats bar */
+.jmap-stats {
+  background: #fff; border-top: 1.5px solid var(--border);
+  padding: 10px 16px; display: flex; gap: 6px;
+  overflow-x: auto; -webkit-overflow-scrolling: touch; flex-shrink: 0;
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.04);
+}
+.jmap-stats::-webkit-scrollbar { display: none; }
+.jmap-stat {
+  display: flex; align-items: center; gap: 7px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 7px 12px; white-space: nowrap; flex-shrink: 0;
+}
+.jmap-stat-ico  { font-size: 0.85rem; }
+.jmap-stat-val  { font-family: var(--font-mono); font-size: 0.82rem; font-weight: 700; color: var(--text-1); }
+.jmap-stat-lbl  { font-size: 0.6rem; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+
+/* Log visit panel */
+.jmap-log-panel {
+  background: #fff; border-top: 1.5px solid var(--border);
+  padding: 14px 16px 18px; flex-shrink: 0;
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.06);
+}
+.jmap-log-title { font-family: var(--font-display); font-size: 0.88rem; font-weight: 800; color: var(--text-1); margin-bottom: 12px; }
+.jmap-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.jmap-fg { display: flex; flex-direction: column; gap: 4px; }
+.jmap-fg label { font-size: 0.65rem; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; }
+.jmap-fg input, .jmap-fg select, .jmap-fg textarea {
+  background: #fff; border: 1.5px solid var(--border); border-radius: var(--r-sm);
+  padding: 9px 11px; font-size: 0.82rem; font-family: var(--font); color: var(--text-1);
+  transition: all var(--t-fast); width: 100%;
+}
+.jmap-fg input::placeholder, .jmap-fg textarea::placeholder { color: var(--text-4); }
+.jmap-fg input:focus, .jmap-fg select:focus, .jmap-fg textarea:focus {
+  border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); outline: none;
+}
+.jmap-fg select {
+  -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' stroke='%236B7280' stroke-width='1.3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center; padding-right: 26px;
+}
+.jmap-log-btn {
+  width: 100%; background: var(--primary); color: #fff; border: none;
+  border-radius: var(--r-md); padding: 12px; font-weight: 800; font-size: 0.88rem;
+  cursor: pointer; font-family: var(--font); box-shadow: var(--shadow-primary);
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  margin-top: 10px; transition: all var(--t-fast); transform: none !important;
+}
+.jmap-log-btn:hover { background: var(--primary-dark); }
+
+/* Timeline */
+.jmap-timeline {
+  background: #fff; border-top: 1.5px solid var(--border);
+  max-height: 220px; overflow-y: auto; flex-shrink: 0;
+}
+.jmap-tl-hdr {
+  padding: 10px 16px 8px;
+  font-size: 0.65rem; font-weight: 800; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--border); position: sticky; top: 0;
+  background: #fff; z-index: 2;
+}
+.jmap-tl-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  transition: background var(--t-fast);
+}
+.jmap-tl-item:last-child { border-bottom: none; }
+.jmap-tl-item:hover { background: var(--surface-2); }
+.jmap-tl-dot {
+  width: 26px; height: 26px; border-radius: 50%; color: #fff;
+  font-weight: 800; font-size: 0.65rem;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 1px; box-shadow: var(--shadow-xs);
+}
+.jmap-tl-body { flex: 1; min-width: 0; }
+.jmap-tl-name { font-weight: 700; font-size: 0.82rem; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jmap-tl-meta { font-size: 0.65rem; color: var(--text-3); margin-top: 1px; }
+.jmap-tl-time { font-size: 0.62rem; color: var(--text-4); font-family: var(--font-mono); flex-shrink: 0; }
+
+/* GPS indicator chip */
+.jmap-gps-chip {
+  position: absolute; top: 10px; right: 10px; z-index: 20;
+  background: #fff; border: 1.5px solid var(--border);
+  border-radius: var(--r-full); padding: 6px 12px;
+  display: flex; align-items: center; gap: 6px;
+  box-shadow: var(--shadow-md);
+}
+.jmap-gps-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); position: relative; }
+.jmap-gps-dot::before { content: ''; position: absolute; inset: 0; border-radius: 50%; background: var(--success); animation: ping 1.5s infinite; }
+.jmap-gps-txt { font-size: 0.7rem; font-weight: 700; color: var(--text-2); }
+
+/* Network indicator */
+.jmap-net-offline {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 20;
+  background: var(--warning-light); border: 1.5px solid #FDE68A;
+  border-radius: var(--r-full); padding: 6px 14px;
+  font-size: 0.72rem; font-weight: 700; color: #92400E;
+  display: flex; align-items: center; gap: 6px;
+  box-shadow: var(--shadow-md);
+}
+
+/* Error state */
+.jmap-error {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  flex: 1; gap: 12px; padding: 40px;
+}
+.jmap-error-ico  { font-size: 2.5rem; opacity: 0.4; }
+.jmap-error-msg  { font-size: 0.85rem; color: var(--text-3); text-align: center; }
+.jmap-error-link { color: var(--primary); font-size: 0.78rem; font-weight: 600; text-decoration: underline; cursor: pointer; }
