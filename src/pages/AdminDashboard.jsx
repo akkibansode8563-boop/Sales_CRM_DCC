@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import useAuthStore from '../store/authStore'
 import dccLogo from '../assets/dcc-logo.png'
 import SyncModeBanner    from '../components/SyncModeBanner'
@@ -22,6 +22,7 @@ import {
     getAllVisitsAllSync,
     getCustomersSync,
     refreshSync,
+    getAuditLogs,
   } from '../utils/supabaseDB'
 import { lazy, Suspense } from 'react'
 import { getStorageMode, isSupabaseConfigured } from '../utils/supabaseClient'
@@ -75,6 +76,7 @@ const NAV = [
   { id:'customers', lbl:'Customers', ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> },
   { id:'products',  lbl:'Products',  ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> },
   { id:'users',     lbl:'Users',     ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg> },
+  { id:'audit',     lbl:'Audit Logs',ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg> },
 ]
 
 export default function AdminDashboard() {
@@ -98,6 +100,7 @@ export default function AdminDashboard() {
   const [showSetupGuide,  setShowSetupGuide] = useState(false)
   const [analyticsPeriod, setAnalyticsPeriod] = useState('month')
   const [analyticsDate,   setAnalyticsDate]   = useState(new Date().toISOString().split('T')[0])
+  const [analyticsEndDate,setAnalyticsEndDate]= useState(new Date().toISOString().split('T')[0])
   const [analyticsData,   setAnalyticsData]   = useState(null)
   const [analyticsMgrId,  setAnalyticsMgrId]  = useState(null)
   const [alerts,          setAlerts]          = useState([])
@@ -108,6 +111,7 @@ export default function AdminDashboard() {
   const [overviewChartType, setOverviewChartType] = useState('sales')
   const [allCustomers,    setAllCustomers]    = useState([])
   const [allVisitsData,   setAllVisitsData]   = useState([])
+  const [auditLogsData,   setAuditLogsData]   = useState([])
   const [offlineCount,    setOfflineCount]    = useState(0)
   const [syncStatus,      setSyncStatus]      = useState('idle')
   const [lastSyncAt,      setLastSyncAt]      = useState(() => getLastSyncAt())
@@ -122,17 +126,26 @@ export default function AdminDashboard() {
   const toastMsg = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3200) }
   const syncLabel = lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' }) : 'Not yet'
 
+  // Debounce timer — prevents reload storms from multiple realtime events firing at once
+  const _reloadTimer = useRef(null)
+
   const reload = useCallback(() => {
-    try { const m = getLiveStatus();   setManagers(Array.isArray(m) ? m : []) }     catch(e) { console.error('getLiveStatus',e);   setManagers([]) }
-    try { const u = getUsersAdmin();   setUsers(Array.isArray(u) ? u : []) }         catch(e) { console.error('getUsersAdmin',e);   setUsers([]) }
-    try { const t = getTerritoryStats(); setTerrStats(Array.isArray(t) ? t : []) }   catch(e) { console.error('getTerritoryStats',e); setTerrStats([]) }
-    try { const c = getCustomersSync(); setAllCustomers(Array.isArray(c) ? c : []) } catch(e) { console.error('getCustomers',e);     setAllCustomers([]) }
-    try { const v = getAllVisitsAllSync(); setAllVisitsData(Array.isArray(v) ? v : []) } catch(e) { console.error('getAllVisitsAll',e); setAllVisitsData([]) }
-    try { setOfflineCount(getQueueCount() || 0) } catch(e) { setOfflineCount(0) }
+    // Debounce: if multiple realtime events fire within 600ms, only run once
+    if (_reloadTimer.current) clearTimeout(_reloadTimer.current)
+    _reloadTimer.current = setTimeout(() => {
+      _reloadTimer.current = null
+      try { const m = getLiveStatus();   setManagers(Array.isArray(m) ? m : []) }     catch(e) { console.error('getLiveStatus',e);   setManagers([]) }
+      try { const u = getUsersAdmin();   setUsers(Array.isArray(u) ? u : []) }         catch(e) { console.error('getUsersAdmin',e);   setUsers([]) }
+      try { const t = getTerritoryStats(); setTerrStats(Array.isArray(t) ? t : []) }   catch(e) { console.error('getTerritoryStats',e); setTerrStats([]) }
+      try { const c = getCustomersSync(); setAllCustomers(Array.isArray(c) ? c : []) } catch(e) { console.error('getCustomers',e);     setAllCustomers([]) }
+      try { const v = getAllVisitsAllSync(); setAllVisitsData(Array.isArray(v) ? v : []) } catch(e) { console.error('getAllVisitsAll',e); setAllVisitsData([]) }
+      try { setOfflineCount(getQueueCount() || 0) } catch(e) { setOfflineCount(0) }
+    }, 600)
   }, [])
 
   useEffect(() => {
-    startAutoSync(30000)
+    // 5 minute auto-sync interval (was 30s — too aggressive for mobile field use)
+    startAutoSync(5 * 60 * 1000)
     const unsub = onSyncStatusChange(s => {
       setSyncStatus(s.syncing ? 'syncing' : s.status || 'idle')
       setOfflineCount(s.count || 0)
@@ -154,18 +167,36 @@ export default function AdminDashboard() {
     }
   }
 
-  const loadAnalytics = useCallback((period, date, mgrId=null) => {
-    try { setAnalyticsData(getAnalytics(mgrId, period, date) || null) }
+  const loadAnalytics = useCallback((period, date, endDate, mgrId=null) => {
+    try { setAnalyticsData(getAnalytics(mgrId, period, period === 'custom' ? { start: date, end: endDate } : date) || null) }
     catch(e) { console.error('getAnalytics', e); setAnalyticsData(null) }
   }, [])
-  useEffect(() => { loadAnalytics(analyticsPeriod, analyticsDate, analyticsMgrId) }, [analyticsPeriod, analyticsDate, analyticsMgrId, loadAnalytics])
+  useEffect(() => { loadAnalytics(analyticsPeriod, analyticsDate, analyticsEndDate, analyticsMgrId) }, [analyticsPeriod, analyticsDate, analyticsEndDate, analyticsMgrId, loadAnalytics])
 
   useEffect(() => {
+    // Request system notification permission for Admin alerts
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+
     const loadAlerts = () => {
       if (shouldShowAlerts()) {
         const dismissed = localStorage.getItem(getAlertDismissKey())
         setAlertsDismissed(!!dismissed)
-        setAlerts(getDailyAlerts())
+        const dailyAlerts = getDailyAlerts()
+        setAlerts(dailyAlerts)
+
+        // Trigger native notification if there are alerts and not yet sent today
+        if (dailyAlerts.length > 0 && !dismissed) {
+          const notifiedKey = 'dcc_push_notified_' + new Date().toISOString().split('T')[0]
+          if (!localStorage.getItem(notifiedKey) && 'Notification' in window && Notification.permission === 'granted') {
+            new Notification('Action Required: Missing Journeys', {
+              body: `${dailyAlerts.length} managers haven't started their journey by 11:30 AM.`,
+              icon: '/dcc-logo.png' 
+            })
+            localStorage.setItem(notifiedKey, 'true')
+          }
+        }
       } else { setAlerts([]) }
     }
     loadAlerts()
@@ -188,21 +219,28 @@ export default function AdminDashboard() {
     init()
   }, [reload])
   useEffect(() => {
-    const unsub = subscribeToLiveUpdates(() => { setTimeout(reload, 800) })
+    const unsub = subscribeToLiveUpdates(() => reload())
     return unsub
   }, [reload])
 
   // Local mode: listen for product_day changes from manager dashboard (same browser, other tab)
   useEffect(() => {
-    const unsub = subscribeToLocalChanges(() => { setTimeout(reload, 400) })
+    const unsub = subscribeToLocalChanges(() => reload())
     return unsub
   }, [reload])
 
   // Cloud mode: Supabase realtime subscription for instant sync
   useEffect(() => {
-    const unsub = startRealtimeSync(() => { setTimeout(reload, 300) })
+    const unsub = startRealtimeSync(() => reload())
     return unsub
   }, [reload])
+
+  // Dynamic Audit tab loader
+  useEffect(() => {
+    if (tab === 'audit') {
+      getAuditLogs(100).then(res => setAuditLogsData(res || [])).catch(console.error)
+    }
+  }, [tab])
 
   const doCreateUser = async () => {
     const cleanUsername = uf.username.trim().toLowerCase().replace(/\s+/g, '_')
@@ -227,7 +265,7 @@ export default function AdminDashboard() {
   }
   const openEditUser = u => {
     setEditingUser(u)
-    setEditCreds({username:u.username, password:u.plain_password||'', show:false})
+    setEditCreds({username:u.username, password:'', show:false})
     setUf({username:u.username,password:'',full_name:u.full_name,email:u.email||'',phone:u.phone||'',territory:u.territory||'',role:u.role,_showPwd:false})
     setUserModal(true)
   }
@@ -1161,13 +1199,21 @@ useEffect(() => {
               <div style={{background:'#fff',borderRadius:12,padding:'14px 18px',boxShadow:'0 1px 4px rgba(0,0,0,0.07)',marginBottom:16}}>
                 <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',marginBottom:12}}>
                   <div style={{fontWeight:800,fontSize:'0.9rem',color:'#111827'}}>Analytics</div>
-                  {['week','month','year'].map(p => (
+                  {['week','month','year','custom'].map(p => (
                     <button key={p} onClick={()=>setAnalyticsPeriod(p)}
                       style={{padding:'6px 16px',borderRadius:8,border:'1.5px solid',fontWeight:700,fontSize:'0.8rem',cursor:'pointer',background:analyticsPeriod===p?'#2563eb':'#f9fafb',color:analyticsPeriod===p?'#fff':'#6b7280',borderColor:analyticsPeriod===p?'#2563eb':'#e5e7eb'}}>
                       {p.charAt(0).toUpperCase()+p.slice(1)}
                     </button>
                   ))}
-                  <input type="date" value={analyticsDate} onChange={e=>setAnalyticsDate(e.target.value)} style={{padding:'6px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:'0.8rem',color:'#374151'}}/>
+                  {analyticsPeriod === 'custom' ? (
+                    <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                      <input type="date" value={analyticsDate} onChange={e=>setAnalyticsDate(e.target.value)} style={{padding:'6px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:'0.8rem',color:'#374151'}}/>
+                      <span style={{color:'#9ca3af',fontWeight:600,fontSize:'0.8rem'}}>to</span>
+                      <input type="date" value={analyticsEndDate} onChange={e=>setAnalyticsEndDate(e.target.value)} style={{padding:'6px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:'0.8rem',color:'#374151'}}/>
+                    </div>
+                  ) : (
+                    <input type="date" value={analyticsDate} onChange={e=>setAnalyticsDate(e.target.value)} style={{padding:'6px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:'0.8rem',color:'#374151'}}/>
+                  )}
                   {analyticsData && (
                     <span style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
                       <span style={{fontSize:'0.75rem',color:'#9ca3af',fontWeight:600}}>{analyticsData.dateFrom} to {analyticsData.dateTo}</span>

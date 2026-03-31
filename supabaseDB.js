@@ -66,14 +66,6 @@ export async function authLogin(username, password) {
       return { success: false, message: 'Invalid username or password' }
     }
 
-    // ✅ Only update plain password
-    if (data.plain_password !== password.trim()) {
-      await supabase
-        .from('users')
-        .update({ plain_password: password.trim() })
-        .eq('id', data.id)
-    }
-
     return {
       success: true,
       user_id: data.id,
@@ -105,7 +97,7 @@ export async function getUsers(roleFilter = null) {
 export async function getUsersAdmin() {
   if (!USE_CLOUD) return local.getUsersAdmin()
   try {
-    const { data } = await supabase.from('users').select('id,username,plain_password,full_name,role,email,phone,territory,is_active,created_at').eq('is_active', true)
+    const { data } = await supabase.from('users').select('id,username,full_name,role,email,phone,territory,is_active,created_at').eq('is_active', true)
     return data || []
   } catch { return local.getUsersAdmin() }
 }
@@ -121,7 +113,6 @@ export async function createUser(data) {
     const { data: newUser, error } = await supabase.from('users').insert({
       username: cleanUsername,
       password_hash: await hashPassword(data.password.trim()),
-      plain_password: data.password.trim(),
       full_name: data.full_name.trim(),
       role: data.role || 'Sales Manager',
       email: data.email || '',
@@ -147,7 +138,6 @@ export async function updateUser(id, updates) {
     allowed.forEach(f => { if (updates[f] !== undefined) patch[f] = updates[f] })
     if (updates.password && updates.password.trim() !== '') {
       patch.password_hash = await hashPassword(updates.password.trim())
-      patch.plain_password = updates.password.trim()
     }
     patch.updated_at = new Date().toISOString()
     const { data, error } = await supabase.from('users').update(patch).eq('id', id).select().single()
@@ -162,7 +152,6 @@ export async function adminSetPassword(id, newPassword) {
     if (!newPassword || newPassword.trim().length < 4) throw new Error('Password must be at least 4 characters')
     const { error } = await supabase.from('users').update({
       password_hash: await hashPassword(newPassword.trim()),
-      plain_password: newPassword.trim(),
       updated_at: new Date().toISOString(),
     }).eq('id', id)
     if (error) throw error

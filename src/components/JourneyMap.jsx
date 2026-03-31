@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { calcDistanceKm, calcTravelTime } from '../utils/supabaseDB'
+import { calcDistanceKm, calcTravelTime, searchCustomers, getRecentCustomers } from '../utils/supabaseDB'
 import { createVisitDraft, validateVisitDraft } from '../utils/visitRequirements'
+import AutocompleteInput from './AutocompleteInput'
 import './JourneyMap.css'
 
 let L = null
@@ -173,21 +174,34 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
 
   const getLocation = () => {
     setLocating(true)
+    setFormError('')
+    
+    const successCb = async p => {
+      const c = {lat:p.coords.latitude, lng:p.coords.longitude}
+      setCurrentPos(c)
+      setForm(f=>({...f, latitude:c.lat, longitude:c.lng, location:`${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}`}))
+      mapInstanceRef.current?.setView([c.lat,c.lng],15)
+      setLocating(false)
+      try {
+        const d = await (await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${c.lat}&lon=${c.lng}&format=json`)).json()
+        const addr = d.display_name?.split(',').slice(0,3).join(', ')
+        if (addr) setForm(f=>({...f, location:addr}))
+      } catch {}
+    }
+
+    const errorCb = () => {
+      // Fallback to low accuracy / cached location
+      navigator.geolocation?.getCurrentPosition(
+        successCb,
+        (err) => { setLocating(false); setFormError('GPS unavailable: ' + err.message) },
+        { enableHighAccuracy: false, maximumAge: 300000, timeout: 15000 }
+      )
+    }
+
     navigator.geolocation?.getCurrentPosition(
-      async p => {
-        const c = {lat:p.coords.latitude, lng:p.coords.longitude}
-        setCurrentPos(c)
-        setForm(f=>({...f, latitude:c.lat, longitude:c.lng, location:`${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}`}))
-        mapInstanceRef.current?.setView([c.lat,c.lng],15)
-        setLocating(false)
-        try {
-          const d = await (await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${c.lat}&lon=${c.lng}&format=json`)).json()
-          const addr = d.display_name?.split(',').slice(0,3).join(', ')
-          if (addr) setForm(f=>({...f, location:addr}))
-        } catch {}
-      },
-      () => setLocating(false),
-      {enableHighAccuracy:true, timeout:10000}
+      successCb,
+      errorCb,
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 8000 }
     )
   }
 
@@ -386,9 +400,40 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
                 </div>
               )}
               <div className="jmap-form-row">
-                <div className="jmap-fg">
+                <div className="jmap-fg" style={{ position: 'relative' }}>
                   <label>Customer Name *</label>
-                  <input value={form.client_name} onChange={e=>setForm(f=>({...f,client_name:e.target.value}))} placeholder="e.g. ABC Distributors" autoFocus/>
+                  <AutocompleteInput
+                    value={form.client_name}
+                    onChange={v => setForm(f=>({...f, client_name:v, customer_id:null}))}
+                    onSelect={c => {
+                      if (!c) return
+                      setForm(f=>({
+                        ...f,
+                        client_name: c.name,
+                        customer_id: c.id,
+                        client_type: c.type || f.client_type,
+                        location: c.address || f.location,
+                        contact_person: c.owner_name || f.contact_person,
+                        contact_phone: c.phone || f.contact_phone,
+                      }))
+                    }}
+                    placeholder="Search or near customer…"
+                    searchFn={searchCustomers}
+                    recentsFn={getRecentCustomers}
+                    renderItem={c => (
+                      <div style={{display:'flex',flexDirection:'column',gap:1}}>
+                        <span style={{fontWeight:600}}>{c.name}</span>
+                        {(c.owner_name || c.phone) && (
+                          <span style={{fontSize:'0.65rem',color:'#9CA3AF'}}>
+                            {c.owner_name && <span>👤 {c.owner_name}</span>}
+                            {c.phone && <span> 📞 {c.phone}</span>}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    renderMeta={c => <span style={{fontSize:'0.65rem',background:'#EFF6FF',padding:'2px 6px',borderRadius:8,color:'#2563EB'}}>{c.type}</span>}
+                    autoFocus
+                  />
                 </div>
                 <div className="jmap-fg">
                   <label>Nature of Business *</label>
