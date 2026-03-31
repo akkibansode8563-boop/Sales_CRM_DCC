@@ -107,11 +107,6 @@ export async function authLogin(username, password) {
   if (!user) return { success:false, message:'Invalid username or password' }
   const hash = await hashPassword(password)
   if (hash !== user.password_hash) return { success:false, message:'Invalid username or password' }
-  // Save plain password on every successful login so admin can always see it
-  const uidx = db.users.findIndex(u => u.id === user.id)
-  if (uidx !== -1 && db.users[uidx].plain_password !== password.trim()) {
-    db.users[uidx].plain_password = password.trim(); saveDB(db)
-  }
   return { success:true, user_id:user.id, username:user.username, role:user.role, full_name:user.full_name, token:generateToken(user) }
 }
 
@@ -137,7 +132,6 @@ export async function createUser(data) {
   const newUser = {
     id: nextId(db.users), username: cleanUsername,
     password_hash: await hashPassword(data.password.trim()),
-    plain_password: data.password.trim(),
     full_name: data.full_name.trim(), role: data.role || 'Sales Manager',
     email: data.email || '', phone: data.phone || '', territory: data.territory || '',
     is_active: true, created_at: new Date().toISOString()
@@ -153,7 +147,6 @@ export async function updateUser(id, updates) {
   allowed.forEach(f=>{ if (updates[f]!==undefined) db.users[idx][f]=updates[f] })
   if (updates.password && updates.password.trim() !== '') {
     db.users[idx].password_hash = await hashPassword(updates.password.trim())
-    db.users[idx].plain_password = updates.password.trim()
   }
   db.users[idx].updated_at = new Date().toISOString()
   saveDB(db)
@@ -165,7 +158,6 @@ export async function adminSetPassword(id, newPassword) {
   const idx = db.users.findIndex(u => u.id === id)
   if (idx === -1) throw new Error('User not found')
   db.users[idx].password_hash = await hashPassword(newPassword.trim())
-  db.users[idx].plain_password = newPassword.trim()
   db.users[idx].updated_at = new Date().toISOString()
   saveDB(db); return { success:true }
 }

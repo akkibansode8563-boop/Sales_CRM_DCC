@@ -313,14 +313,14 @@ create index if not exists idx_offline_status on public.offline_queue(status);
 -- ═══════════════════════════════════════════════════════════
 -- REALTIME — enable on all key tables
 -- ═══════════════════════════════════════════════════════════
-alter publication supabase_realtime add table public.visits;
-alter publication supabase_realtime add table public.journeys;
-alter publication supabase_realtime add table public.journey_locations;
-alter publication supabase_realtime add table public.status_history;
-alter publication supabase_realtime add table public.daily_sales_reports;
-alter publication supabase_realtime add table public.product_day;
-alter publication supabase_realtime add table public.customers;
-alter publication supabase_realtime add table public.targets;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.visits; EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.journeys; EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.journey_locations; EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.status_history; EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.daily_sales_reports; EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.product_day; EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.customers; EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.targets; EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- ═══════════════════════════════════════════════════════════
 -- ROW LEVEL SECURITY
@@ -395,8 +395,8 @@ order by v.year desc, v.month desc;
 -- ═══════════════════════════════════════════════════════════
 -- SEED DATA
 -- ═══════════════════════════════════════════════════════════
-insert into public.users (id, username, password_hash, plain_password, full_name, role, email, is_active)
-values (1, 'admin', 'e86f78a8a3caf0b60d8e74e5942aa6d86dc150cd3c03338aef25b7d2d7e3acc7', 'Admin@123', 'System Administrator', 'Admin', 'admin@dcc.com', true)
+insert into public.users (id, username, password_hash, full_name, role, email, is_active)
+values (1, 'admin', 'e86f78a8a3caf0b60d8e74e5942aa6d86dc150cd3c03338aef25b7d2d7e3acc7', 'System Administrator', 'Admin', 'admin@dcc.com', true)
 on conflict (username) do nothing;
 
 insert into public.brands (name) values ('Brand Alpha'), ('Brand Beta'), ('Brand Gamma')
@@ -419,3 +419,153 @@ ALTER TABLE public.visits ADD COLUMN IF NOT EXISTS contact_person text default '
 ALTER TABLE public.visits ADD COLUMN IF NOT EXISTS contact_phone  text default '';
 ALTER TABLE public.visits ADD COLUMN IF NOT EXISTS photo         text default '';
 ALTER TABLE public.visits ADD COLUMN IF NOT EXISTS voice_note    text default '';
+
+-- ═══════════════════════════════════════════════════════════
+-- PERFORMANCE: Composite indexes (v2 additions)
+-- ═══════════════════════════════════════════════════════════
+-- Compound index for the most common admin query: "visits by manager on a date"
+create index if not exists idx_visits_manager_date
+  on public.visits(manager_id, visit_date);
+
+-- Journey locations: fast trail retrieval sorted by time
+create index if not exists idx_jloc_journey_ts
+  on public.journey_locations(journey_id, timestamp);
+
+-- Daily reports: fast per-manager date range lookup
+create index if not exists idx_reports_manager_date
+  on public.daily_sales_reports(manager_id, date);
+
+-- Product day: fast per-manager + date queries
+create index if not exists idx_product_day_manager_date
+  on public.product_day(manager_id, date);
+
+-- Targets: fast per-manager + year/month lookups
+create index if not exists idx_targets_manager_ym
+  on public.targets(manager_id, year, month);
+
+-- ═══════════════════════════════════════════════════════════
+-- ERROR LOGS
+-- ═══════════════════════════════════════════════════════════
+create table if not exists public.error_logs (
+  id            bigserial primary key,
+  user_id       bigint references public.users(id) on delete set null,
+  error_message text,
+  stack_trace   text,
+  url           text,
+  created_at    timestamptz default now()
+);
+create index if not exists idx_error_logs_user on public.error_logs(user_id);
+create index if not exists idx_error_logs_date on public.error_logs(created_at);
+
+alter table public.error_logs enable row level security;
+create policy "allow_all_error_logs" on public.error_logs for all using (true) with check (true);
+
+-- ═══════════════════════════════════════════════════════════
+-- SYNC LOGS
+-- ═══════════════════════════════════════════════════════════
+create table if not exists public.sync_logs (
+  id          bigserial primary key,
+  device_id   text,
+  user_id     bigint references public.users(id) on delete set null,
+  synced_at   timestamptz default now(),
+  pushed      integer default 0,
+  pulled      integer default 0,
+  conflicts   integer default 0,
+  error       text
+);
+create index if not exists idx_sync_logs_user on public.sync_logs(user_id);
+create index if not exists idx_sync_logs_date on public.sync_logs(synced_at);
+
+alter table public.sync_logs enable row level security;
+create policy "allow_all_sync_logs" on public.sync_logs for all using (true) with check (true);
+
+-- ═══════════════════════════════════════════════════════════
+-- RPC: get_live_status_batch
+-- Replaces N×5 individual queries with a single SQL call.
+-- Called by the Admin Dashboard LiveField view.
+-- Returns one row per active Sales Manager.
+-- ═══════════════════════════════════════════════════════════
+create or replace function public.get_live_status_batch(target_date date)
+returns table (
+  manager_id         bigint,
+  manager_name       text,
+  manager_username   text,
+  territory          text,
+  email              text,
+  phone              text,
+  curr_status        text,
+  last_status_at     timestamptz,
+  visits_today       bigint,
+  today_sales        numeric,
+  active_journey_id  bigint,
+  journey_started_at timestamptz,
+  suspicious_flags   integer,
+  last_gps_lat       double precision,
+  last_gps_lng       double precision,
+  last_gps_time      timestamptz,
+  last_gps_speed     double precision
+)
+language sql
+stable
+as $$
+  with
+  -- Most recent status per manager
+  latest_status as (
+    select distinct on (manager_id)
+      manager_id, status, timestamp
+    from public.status_history
+    order by manager_id, timestamp desc
+  ),
+  -- Today's visit count per manager
+  today_visits as (
+    select manager_id, count(*) as cnt, coalesce(sum(sale_amount), 0) as total_sales
+    from public.visits
+    where visit_date = target_date
+    group by manager_id
+  ),
+  -- Active journey per manager
+  active_journey as (
+    select distinct on (manager_id)
+      id as journey_id, manager_id, start_time,
+      suspicious_flags, status
+    from public.journeys
+    where status = 'active' and date = target_date
+    order by manager_id, start_time desc
+  ),
+  -- Last GPS location per active journey
+  last_gps as (
+    select distinct on (jl.manager_id)
+      jl.manager_id,
+      jl.latitude, jl.longitude, jl.timestamp, jl.speed_kmh
+    from public.journey_locations jl
+    inner join active_journey aj on aj.journey_id = jl.journey_id
+    order by jl.manager_id, jl.timestamp desc
+  )
+  select
+    u.id                              as manager_id,
+    u.full_name                       as manager_name,
+    u.username                        as manager_username,
+    u.territory,
+    u.email,
+    u.phone,
+    coalesce(ls.status, 'In-Office')  as curr_status,
+    ls.timestamp                      as last_status_at,
+    coalesce(tv.cnt, 0)               as visits_today,
+    coalesce(tv.total_sales, 0)       as today_sales,
+    aj.journey_id                     as active_journey_id,
+    aj.start_time                     as journey_started_at,
+    coalesce(aj.suspicious_flags, 0)  as suspicious_flags,
+    lg.latitude                       as last_gps_lat,
+    lg.longitude                      as last_gps_lng,
+    lg.timestamp                      as last_gps_time,
+    lg.speed_kmh                      as last_gps_speed
+  from public.users u
+  left join latest_status  ls on ls.manager_id = u.id
+  left join today_visits   tv on tv.manager_id = u.id
+  left join active_journey aj on aj.manager_id = u.id
+  left join last_gps       lg on lg.manager_id = u.id
+  where u.role = 'Sales Manager'
+    and u.is_active = true
+  order by u.full_name
+$$;
+

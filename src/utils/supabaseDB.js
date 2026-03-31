@@ -185,7 +185,7 @@ export async function getUsers(roleFilter = null) {
 export async function getUsersAdmin() {
   if (!USE_CLOUD()) return local.getUsersAdmin()
   try {
-    const { data } = await supabase.from('users').select('id,username,plain_password,full_name,role,email,phone,territory,is_active,created_at').eq('is_active', true)
+    const { data } = await supabase.from('users').select('id,username,full_name,role,email,phone,territory,is_active,created_at').eq('is_active', true)
     return data || []
   } catch { return local.getUsersAdmin() }
 }
@@ -201,7 +201,6 @@ export async function createUser(data) {
     const { data: newUser, error } = await supabase.from('users').insert({
       username: cleanUsername,
       password_hash: await hashPassword(data.password.trim()),
-      plain_password: data.password.trim(),
       full_name: data.full_name.trim(),
       role: data.role || 'Sales Manager',
       email: data.email || '',
@@ -226,7 +225,6 @@ export async function updateUser(id, updates) {
     allowed.forEach(f => { if (updates[f] !== undefined) patch[f] = updates[f] })
     if (updates.password && updates.password.trim() !== '') {
       patch.password_hash = await hashPassword(updates.password.trim())
-      patch.plain_password = updates.password.trim()
     }
     patch.updated_at = new Date().toISOString()
     const { data, error } = await supabase.from('users').update(patch).eq('id', id).select().single()
@@ -242,7 +240,6 @@ export async function adminSetPassword(id, newPassword) {
     if (!newPassword || newPassword.trim().length < 4) throw new Error('Password must be at least 4 characters')
     const { error } = await supabase.from('users').update({
       password_hash: await hashPassword(newPassword.trim()),
-      plain_password: newPassword.trim(),
       updated_at: new Date().toISOString(),
     }).eq('id', id)
     if (error) throw error
@@ -697,64 +694,83 @@ export const getRecentProducts  = local.getRecentProducts
 export const getRecentBrands    = local.getRecentBrands
 
 // ---------------------------------------------------------
-// LIVE STATUS (Admin) - queries Supabase for real-time data
+// LIVE STATUS (Admin) — uses get_live_status_batch RPC
+// Replaces the old N+1 query pattern (50+ queries → 1 call)
 // ---------------------------------------------------------
 export async function getLiveStatus() {
   if (!USE_CLOUD()) return local.getLiveStatus()
   try {
     const today = new Date().toISOString().split('T')[0]
-    const { data: managers } = await supabase.from('users').select('*').eq('role', 'Sales Manager').eq('is_active', true)
-    if (!managers) return local.getLiveStatus()
 
-    return await Promise.all(managers.map(async m => {
-      const [statusRes, visitsRes, journeyRes, targetRes, reportRes] = await Promise.all([
-        supabase.from('status_history').select('status,timestamp').eq('manager_id', m.id).order('timestamp', { ascending: false }).limit(1),
-        supabase.from('visits').select('*').eq('manager_id', m.id).eq('visit_date', today),
-        supabase.from('journeys').select('*').eq('manager_id', m.id).eq('status', 'active').single(),
-        supabase.from('targets').select('*').eq('manager_id', m.id).order('year', { ascending: false }).order('month', { ascending: false }).limit(1),
-        supabase.from('daily_sales_reports').select('*').eq('manager_id', m.id).eq('date', today).single(),
-      ])
+    // Single RPC call returns all manager statuses, GPS, visits, journeys
+    const { data, error } = await supabase.rpc('get_live_status_batch', { target_date: today })
+    if (error) throw error
+    if (!data || data.length === 0) return local.getLiveStatus()
 
-      const curr = statusRes.data?.[0]
-      const todayVisits = visitsRes.data || []
-      const activeJourney = journeyRes.data
-      const target = targetRes.data?.[0]
-      const todayRpt = reportRes.data
+    // For detailed visit list per manager (only fetch if needed for visit list display)
+    const visitPromises = data
+      .filter(m => m.visits_today > 0)
+      .map(async m => {
+        const { data: vd } = await supabase
+          .from('visits')
+          .select('*')
+          .eq('manager_id', m.manager_id)
+          .eq('visit_date', today)
+          .order('created_at', { ascending: true })
+        return { manager_id: m.manager_id, visits: vd || [] }
+      })
 
-      let lastGPS = null
-      if (activeJourney) {
-        const { data: locs } = await supabase.from('journey_locations').select('*').eq('journey_id', activeJourney.id).order('timestamp', { ascending: false }).limit(1)
-        if (locs?.[0]) lastGPS = { lat: locs[0].latitude, lng: locs[0].longitude, time: locs[0].timestamp, speed: locs[0].speed_kmh }
-      }
+    const visitsByManager = {}
+    const visitResults = await Promise.all(visitPromises)
+    visitResults.forEach(r => { visitsByManager[r.manager_id] = r.visits })
 
-      const lastVisit = todayVisits[todayVisits.length - 1] || null
+    return data.map(m => {
+      const todayVisits = visitsByManager[m.manager_id] || []
+      const lastVisit   = todayVisits[todayVisits.length - 1] || null
       const enrichedVisits = todayVisits.map((v, idx) => ({
         ...v,
-        visit_number: idx + 1,
+        visit_number:  idx + 1,
         customer_name: v.client_name || v.customer_name || 'Unknown',
       }))
+
       return {
-        id: m.id, name: m.full_name, username: m.username, territory: m.territory || '—',
-        email: m.email, phone: m.phone,
-        status: curr?.status || 'In-Office', last_update: curr?.timestamp || null,
-        visits_today: todayVisits.length,
+        id:         m.manager_id,
+        name:       m.manager_name,
+        username:   m.manager_username,
+        territory:  m.territory || '—',
+        email:      m.email,
+        phone:      m.phone,
+        status:     m.curr_status || 'In-Office',
+        last_update: m.last_status_at || null,
+        visits_today: Number(m.visits_today || 0),
         today_visits_list: enrichedVisits,
         last_location: lastVisit ? {
-          name: lastVisit.location,
-          customer_name: lastVisit.client_name || lastVisit.customer_name || '',
-          customer_type: lastVisit.client_type || '',
+          name:           lastVisit.location,
+          customer_name:  lastVisit.client_name || lastVisit.customer_name || '',
+          customer_type:  lastVisit.client_type || '',
           contact_person: lastVisit.contact_person || '',
-          contact_phone: lastVisit.contact_phone || '',
-          visit_number: todayVisits.length,
-          lat: lastVisit.latitude, lng: lastVisit.longitude,
+          contact_phone:  lastVisit.contact_phone || '',
+          visit_number:   todayVisits.length,
+          lat:  lastVisit.latitude,
+          lng:  lastVisit.longitude,
           time: lastVisit.created_at,
           notes: lastVisit.notes || '',
         } : null,
-        last_gps: lastGPS,
-        active_journey: activeJourney ? { id: activeJourney.id, started_at: activeJourney.start_time, visit_count: todayVisits.length, suspicious_flags: activeJourney.suspicious_flags || 0 } : null,
-        target, today_sales: todayRpt?.sales_achievement || 0,
+        last_gps: m.last_gps_lat ? {
+          lat:   m.last_gps_lat,
+          lng:   m.last_gps_lng,
+          time:  m.last_gps_time,
+          speed: m.last_gps_speed,
+        } : null,
+        active_journey: m.active_journey_id ? {
+          id:              m.active_journey_id,
+          started_at:      m.journey_started_at,
+          visit_count:     Number(m.visits_today || 0),
+          suspicious_flags: m.suspicious_flags || 0,
+        } : null,
+        today_sales: Number(m.today_sales || 0),
       }
-    }))
+    })
   } catch { return local.getLiveStatus() }
 }
 

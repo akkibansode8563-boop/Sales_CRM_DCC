@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import useAuthStore from '../store/authStore'
 import dccLogo from '../assets/dcc-logo.png'
 import SyncModeBanner    from '../components/SyncModeBanner'
@@ -122,17 +122,26 @@ export default function AdminDashboard() {
   const toastMsg = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3200) }
   const syncLabel = lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' }) : 'Not yet'
 
+  // Debounce timer — prevents reload storms from multiple realtime events firing at once
+  const _reloadTimer = useRef(null)
+
   const reload = useCallback(() => {
-    try { const m = getLiveStatus();   setManagers(Array.isArray(m) ? m : []) }     catch(e) { console.error('getLiveStatus',e);   setManagers([]) }
-    try { const u = getUsersAdmin();   setUsers(Array.isArray(u) ? u : []) }         catch(e) { console.error('getUsersAdmin',e);   setUsers([]) }
-    try { const t = getTerritoryStats(); setTerrStats(Array.isArray(t) ? t : []) }   catch(e) { console.error('getTerritoryStats',e); setTerrStats([]) }
-    try { const c = getCustomersSync(); setAllCustomers(Array.isArray(c) ? c : []) } catch(e) { console.error('getCustomers',e);     setAllCustomers([]) }
-    try { const v = getAllVisitsAllSync(); setAllVisitsData(Array.isArray(v) ? v : []) } catch(e) { console.error('getAllVisitsAll',e); setAllVisitsData([]) }
-    try { setOfflineCount(getQueueCount() || 0) } catch(e) { setOfflineCount(0) }
+    // Debounce: if multiple realtime events fire within 600ms, only run once
+    if (_reloadTimer.current) clearTimeout(_reloadTimer.current)
+    _reloadTimer.current = setTimeout(() => {
+      _reloadTimer.current = null
+      try { const m = getLiveStatus();   setManagers(Array.isArray(m) ? m : []) }     catch(e) { console.error('getLiveStatus',e);   setManagers([]) }
+      try { const u = getUsersAdmin();   setUsers(Array.isArray(u) ? u : []) }         catch(e) { console.error('getUsersAdmin',e);   setUsers([]) }
+      try { const t = getTerritoryStats(); setTerrStats(Array.isArray(t) ? t : []) }   catch(e) { console.error('getTerritoryStats',e); setTerrStats([]) }
+      try { const c = getCustomersSync(); setAllCustomers(Array.isArray(c) ? c : []) } catch(e) { console.error('getCustomers',e);     setAllCustomers([]) }
+      try { const v = getAllVisitsAllSync(); setAllVisitsData(Array.isArray(v) ? v : []) } catch(e) { console.error('getAllVisitsAll',e); setAllVisitsData([]) }
+      try { setOfflineCount(getQueueCount() || 0) } catch(e) { setOfflineCount(0) }
+    }, 600)
   }, [])
 
   useEffect(() => {
-    startAutoSync(30000)
+    // 5 minute auto-sync interval (was 30s — too aggressive for mobile field use)
+    startAutoSync(5 * 60 * 1000)
     const unsub = onSyncStatusChange(s => {
       setSyncStatus(s.syncing ? 'syncing' : s.status || 'idle')
       setOfflineCount(s.count || 0)
@@ -188,19 +197,19 @@ export default function AdminDashboard() {
     init()
   }, [reload])
   useEffect(() => {
-    const unsub = subscribeToLiveUpdates(() => { setTimeout(reload, 800) })
+    const unsub = subscribeToLiveUpdates(() => reload())
     return unsub
   }, [reload])
 
   // Local mode: listen for product_day changes from manager dashboard (same browser, other tab)
   useEffect(() => {
-    const unsub = subscribeToLocalChanges(() => { setTimeout(reload, 400) })
+    const unsub = subscribeToLocalChanges(() => reload())
     return unsub
   }, [reload])
 
   // Cloud mode: Supabase realtime subscription for instant sync
   useEffect(() => {
-    const unsub = startRealtimeSync(() => { setTimeout(reload, 300) })
+    const unsub = startRealtimeSync(() => reload())
     return unsub
   }, [reload])
 
@@ -227,7 +236,7 @@ export default function AdminDashboard() {
   }
   const openEditUser = u => {
     setEditingUser(u)
-    setEditCreds({username:u.username, password:u.plain_password||'', show:false})
+    setEditCreds({username:u.username, password:'', show:false})
     setUf({username:u.username,password:'',full_name:u.full_name,email:u.email||'',phone:u.phone||'',territory:u.territory||'',role:u.role,_showPwd:false})
     setUserModal(true)
   }
