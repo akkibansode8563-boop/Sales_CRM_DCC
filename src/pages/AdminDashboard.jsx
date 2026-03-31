@@ -170,11 +170,29 @@ export default function AdminDashboard() {
   useEffect(() => { loadAnalytics(analyticsPeriod, analyticsDate, analyticsMgrId) }, [analyticsPeriod, analyticsDate, analyticsMgrId, loadAnalytics])
 
   useEffect(() => {
+    // Request system notification permission for Admin alerts
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+
     const loadAlerts = () => {
       if (shouldShowAlerts()) {
         const dismissed = localStorage.getItem(getAlertDismissKey())
         setAlertsDismissed(!!dismissed)
-        setAlerts(getDailyAlerts())
+        const dailyAlerts = getDailyAlerts()
+        setAlerts(dailyAlerts)
+
+        // Trigger native notification if there are alerts and not yet sent today
+        if (dailyAlerts.length > 0 && !dismissed) {
+          const notifiedKey = 'dcc_push_notified_' + new Date().toISOString().split('T')[0]
+          if (!localStorage.getItem(notifiedKey) && 'Notification' in window && Notification.permission === 'granted') {
+            new Notification('Action Required: Missing Journeys', {
+              body: `${dailyAlerts.length} managers haven't started their journey by 11:30 AM.`,
+              icon: '/dcc-logo.png' 
+            })
+            localStorage.setItem(notifiedKey, 'true')
+          }
+        }
       } else { setAlerts([]) }
     }
     loadAlerts()
