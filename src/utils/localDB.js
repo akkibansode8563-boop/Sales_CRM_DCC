@@ -720,6 +720,67 @@ export function detectNearbyCustomers(latitude, longitude, radiusKm=0.2) {
 // HEATMAP DATA — for admin analytics
 // Returns all visit coordinates with weight
 // -------------------------------------------
+
+// -------------------------------------------
+// JOURNEY FULL DATA — for Heatmap journey view
+// Returns all journeys for a manager on a date,
+// with visits attached and distance/time calculations
+// -------------------------------------------
+export function getJourneysForDate(manager_id, date) {
+  const db = getDB()
+  let journeys = db.journeys || []
+  if (manager_id) journeys = journeys.filter(j => j.manager_id === manager_id)
+  if (date)       journeys = journeys.filter(j => j.date === date)
+
+  return journeys.map(journey => {
+    // GPS trail points for this journey
+    const locations = (db.journey_locations || [])
+      .filter(l => l.journey_id === journey.id)
+      .sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp))
+
+    // Visits for this manager on this date (sorted by time)
+    const visits = (db.visits || [])
+      .filter(v => v.manager_id === journey.manager_id && v.visit_date === journey.date)
+      .sort((a,b) => new Date(a.created_at) - new Date(b.created_at))
+      .map((v, i, arr) => {
+        // Previous point — either last visit or journey start
+        const prevLat = i === 0 ? journey.start_latitude  : (arr[i-1].latitude)
+        const prevLng = i === 0 ? journey.start_longitude : (arr[i-1].longitude)
+        const distKm = (prevLat && prevLng && v.latitude && v.longitude)
+          ? calcDistanceKm(prevLat, prevLng, v.latitude, v.longitude)
+          : null
+        // Time since previous point
+        const prevTime = i === 0 ? journey.start_time : arr[i-1].created_at
+        const timeMins = prevTime
+          ? Math.round((new Date(v.created_at) - new Date(prevTime)) / 60000)
+          : null
+        return {
+          ...v,
+          visit_number: i + 1,
+          dist_from_prev_km: distKm,
+          time_from_prev_mins: timeMins,
+          customer_name: v.client_name || v.customer_name || 'Unknown',
+        }
+      })
+
+    // Total distance
+    const totalKm = visits.reduce((s,v) => s + (v.dist_from_prev_km||0), 0)
+
+    return { ...journey, visits, locations, totalKm }
+  }).sort((a,b) => new Date(a.start_time) - new Date(b.start_time))
+}
+
+export function getManagersWithJourneys(date) {
+  const db = getDB()
+  const today = date || new Date().toISOString().split('T')[0]
+  const journeys = (db.journeys || []).filter(j => j.date === today)
+  const mgrIds = [...new Set(journeys.map(j => j.manager_id))]
+  return mgrIds.map(id => {
+    const user = (db.users || []).find(u => u.id === id)
+    return { id, full_name: user?.full_name || 'Unknown', territory: user?.territory || '' }
+  })
+}
+
 export function getHeatmapData(manager_id=null, dateFrom=null, dateTo=null) {
   const db = getDB()
   let visits = db.visits.filter(v => v.latitude && v.longitude)

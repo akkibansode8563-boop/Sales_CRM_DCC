@@ -850,6 +850,8 @@ export function getProductEntriesSync(manager_id)              { return local.ge
 export function getAllProductDayEntriesSync(dateFrom, dateTo, managerId) { return local.getAllProductDayEntries(dateFrom, dateTo, managerId) }
 export function getTargetsSync(manager_id)        { return local.getTargets(manager_id) }
 export function getJourneyHistorySync(manager_id) { return local.getJourneyHistory(manager_id) }
+export function getJourneysForDateSync(manager_id, date) { return local.getJourneysForDate(manager_id, date) }
+export function getManagersWithJourneysSync(date) { return local.getManagersWithJourneys(date) }
 export function getLiveStatusSync()               { return local.getLiveStatus() }
 export function getUsersAdminSync()               { return local.getUsersAdmin() }
 export function getAllVisitsAllSync()              { return local.getAllVisitsAll() }
