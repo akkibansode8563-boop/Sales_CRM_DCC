@@ -446,6 +446,7 @@ create index if not exists idx_targets_manager_ym
 -- ═══════════════════════════════════════════════════════════
 -- ERROR LOGS
 -- ═══════════════════════════════════════════════════════════
+<<<<<<< HEAD
 -- 12. error_logs (For Global Error Logger)
 CREATE TABLE IF NOT EXISTS public.error_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -526,6 +527,17 @@ FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
 -- ==============================================================================
 -- END OF SUPABASE SCHEMA
 -- ==============================================================================
+=======
+create table if not exists public.error_logs (
+  id            bigserial primary key,
+  user_id       bigint references public.users(id) on delete set null,
+  error_message text,
+  stack_trace   text,
+  url           text,
+  created_at    timestamptz default now()
+);
+create index if not exists idx_error_logs_user on public.error_logs(user_id);
+>>>>>>> ecb89041b24eaef3779c80e7f2d9a9ecd541facf
 create index if not exists idx_error_logs_date on public.error_logs(created_at);
 
 alter table public.error_logs enable row level security;

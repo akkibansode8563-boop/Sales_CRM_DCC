@@ -5,6 +5,21 @@
 
 const DB_KEY = 'dcc_sfa_v3'
 
+// ─── Simple in-memory cache for expensive reads ──────────────────────────────
+const _cache = {}
+const _cacheTs = {}
+function cached(key, ttlMs, fn) {
+  const now = Date.now()
+  if (_cache[key] && (now - (_cacheTs[key]||0)) < ttlMs) return _cache[key]
+  _cache[key] = fn()
+  _cacheTs[key] = now
+  return _cache[key]
+}
+function invalidateCache(key) { delete _cache[key]; delete _cacheTs[key] }
+function invalidateAll() { Object.keys(_cache).forEach(k => { delete _cache[k]; delete _cacheTs[k] }) }
+
+
+
 async function hashPassword(password) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password))
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('')
@@ -17,29 +32,16 @@ const TERRITORIES = ['Mumbai West','Mumbai East','Mumbai Central','Pune City','P
 
 const INITIAL_DB = {
   users: [
-    { id:1, username:'admin',      password_hash:'e86f78a8a3caf0b60d8e74e5942aa6d86dc150cd3c03338aef25b7d2d7e3acc7', full_name:'System Administrator', role:'Admin',         email:'admin@dcc.com', phone:'', territory:'', is_active:true, created_at:'2026-01-01T00:00:00.000Z' },
-    { id:2, username:'john_doe',   password_hash:'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f',  full_name:'John Doe',             role:'Sales Manager', email:'john@dcc.com',  phone:'9876543210', territory:'Mumbai West', is_active:true, created_at:'2026-01-01T00:00:00.000Z' },
-    { id:3, username:'jane_smith', password_hash:'e8392925a98c9c22795d1fc5d0dfee5b9a6943f6b768ec5a2a0c077e5ed119cf', full_name:'Jane Smith',           role:'Sales Manager', email:'jane@dcc.com',  phone:'9876543211', territory:'Mumbai East', is_active:true, created_at:'2026-01-01T00:00:00.000Z' },
+    { id:1, username:'admin', password_hash:'e86f78a8a3caf0b60d8e74e5942aa6d86dc150cd3c03338aef25b7d2d7e3acc7', full_name:'System Administrator', role:'Admin', email:'admin@dcc.com', phone:'', territory:'', is_active:true, created_at:new Date().toISOString() },
   ],
   visits: [],
-  targets: [
-    { id:1, manager_id:2, visit_target:20, sales_target:100000, month:3, year:2026, created_at:'2026-03-01T00:00:00.000Z' },
-    { id:2, manager_id:3, visit_target:20, sales_target:80000,  month:3, year:2026, created_at:'2026-03-01T00:00:00.000Z' },
-  ],
-  statusHistory: [
-    { id:1, manager_id:2, status:'In-Office', timestamp:'2026-03-01T08:00:00.000Z' },
-    { id:2, manager_id:3, status:'In-Office', timestamp:'2026-03-01T08:00:00.000Z' },
-  ],
+  targets: [],
+  statusHistory: [],
   journeys: [],
   journey_locations: [],   // NEW: GPS trail per journey
   daily_sales_reports: [],
   product_day: [],
-  customers: [
-    { id:1, name:'ABC Distributors', owner_name:'Ramesh Shah',  type:'Distributor', address:'Andheri West, Mumbai', phone:'9000000001', territory:'Mumbai West', latitude:19.1383, longitude:72.8273, visit_count:0, last_visited:null, created_by:2, created_at:'2026-01-01T00:00:00.000Z' },
-    { id:2, name:'XYZ Traders',      owner_name:'Suresh Patel', type:'Retailer',    address:'Bandra, Mumbai',       phone:'9000000002', territory:'Mumbai West', latitude:19.0596, longitude:72.8295, visit_count:0, last_visited:null, created_by:2, created_at:'2026-01-01T00:00:00.000Z' },
-    { id:3, name:'PQR Wholesalers',  owner_name:'Amit Kumar',   type:'Wholesaler',  address:'Kurla, Mumbai',        phone:'9000000003', territory:'Mumbai East', latitude:19.0728, longitude:72.8826, visit_count:0, last_visited:null, created_by:3, created_at:'2026-01-01T00:00:00.000Z' },
-    { id:4, name:'MNO Infotech',     owner_name:'Priya Sharma', type:'Dealer',      address:'Thane, Mumbai',        phone:'9000000004', territory:'Mumbai East', latitude:19.2183, longitude:72.9781, visit_count:0, last_visited:null, created_by:3, created_at:'2026-01-01T00:00:00.000Z' },
-  ],
+  customers: [],
   brands: [
     { id:1, name:'Brand Alpha', created_at:'2026-01-01T00:00:00.000Z' },
     { id:2, name:'Brand Beta',  created_at:'2026-01-01T00:00:00.000Z' },
@@ -56,12 +58,16 @@ const INITIAL_DB = {
   recentBrands:    [],
 }
 
-function getDB() {
+// ── In-memory cache: read localStorage ONCE, mutate in RAM, flush on writes ──
+let _dbCache = null
+let _saveTimer = null
+
+export function getDB() {
+  if (_dbCache) return _dbCache          // instant — no JSON.parse
   try {
     const raw = localStorage.getItem(DB_KEY)
-    if (!raw) { saveDB(INITIAL_DB); return JSON.parse(JSON.stringify(INITIAL_DB)) }
-    const db = JSON.parse(raw)
-    // Migration: ensure ALL tables exist (guards against old localStorage schema)
+    const db  = raw ? JSON.parse(raw) : JSON.parse(JSON.stringify(INITIAL_DB))
+    // Migration guards
     if (!Array.isArray(db.users))               db.users               = INITIAL_DB.users
     if (!Array.isArray(db.visits))              db.visits              = []
     if (!Array.isArray(db.targets))             db.targets             = []
@@ -77,18 +83,63 @@ function getDB() {
     if (!Array.isArray(db.recentProducts))      db.recentProducts      = []
     if (!Array.isArray(db.recentBrands))        db.recentBrands        = []
     if (!Array.isArray(db.offline_queue))       db.offline_queue       = []
-    // Ensure customers have lat/lng fields
     db.customers.forEach(c => {
-      if (c.latitude === undefined)  c.latitude  = null
+      if (c.latitude  === undefined) c.latitude  = null
       if (c.longitude === undefined) c.longitude = null
-      if (c.owner_name === undefined) c.owner_name = ''
-      if (c.created_by === undefined) c.created_by = null
+      if (!c.owner_name) c.owner_name = ''
+      if (!c.created_by) c.created_by = null
     })
-    return db
-  } catch { saveDB(INITIAL_DB); return JSON.parse(JSON.stringify(INITIAL_DB)) }
+    if (!raw) saveDB(db)
+    _dbCache = db
+    return _dbCache
+  } catch { _dbCache = JSON.parse(JSON.stringify(INITIAL_DB)); saveDB(_dbCache); return _dbCache }
 }
 
-function saveDB(db) { localStorage.setItem(DB_KEY, JSON.stringify(db)) }
+// Debounced write: flush to localStorage max once per 300ms
+function saveDB(db) {
+  _dbCache = db
+  if (_saveTimer) clearTimeout(_saveTimer)
+  _saveTimer = setTimeout(() => {
+    try {
+      const serialized = JSON.stringify(db)
+      localStorage.setItem(DB_KEY, serialized)
+      // Broadcast to other tabs/windows (admin console) — StorageEvent only fires for OTHER tabs
+      // For same-tab we dispatch manually
+      try {
+        window.dispatchEvent(new StorageEvent('storage', { key: DB_KEY, newValue: serialized }))
+      } catch {}
+    } catch(e) {}
+    _saveTimer = null
+  }, 300)
+}
+
+// Immediate flush for critical writes (auth, journey start/end, product_day)
+function saveDBNow(db) {
+  _dbCache = db
+  if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null }
+  try {
+    const serialized = JSON.stringify(db)
+    localStorage.setItem(DB_KEY, serialized)
+    try {
+      window.dispatchEvent(new StorageEvent('storage', { key: DB_KEY, newValue: serialized }))
+    } catch {}
+  } catch(e) {}
+}
+
+export function replaceDB(nextDb) {
+  const current = getDB()
+  const merged = {
+    ...JSON.parse(JSON.stringify(INITIAL_DB)),
+    ...nextDb,
+    recentCustomers: Array.isArray(nextDb?.recentCustomers) ? nextDb.recentCustomers : (current.recentCustomers || []),
+    recentProducts: Array.isArray(nextDb?.recentProducts) ? nextDb.recentProducts : (current.recentProducts || []),
+    recentBrands: Array.isArray(nextDb?.recentBrands) ? nextDb.recentBrands : (current.recentBrands || []),
+    offline_queue: Array.isArray(nextDb?.offline_queue) ? nextDb.offline_queue : (current.offline_queue || []),
+  }
+  saveDBNow(merged)
+  return merged
+}
+
 function nextId(arr) { return arr.length>0 ? Math.max(...arr.map(i=>i.id||0))+1 : 1 }
 
 // -------------------------------------------
@@ -374,6 +425,30 @@ export function getProductDayEntries(manager_id, dateParam=null) {
   if(dateParam) entries=entries.filter(p=>dateParam.length===7?p.date.startsWith(dateParam):p.date===dateParam)
   return entries.sort((a,b)=>new Date(b.date)-new Date(a.date))
 }
+
+// Get ALL product_day entries across ALL managers — with manager name attached
+export function getAllProductDayEntries(dateFrom=null, dateTo=null, managerId=null) {
+  const db = getDB()
+  const users = db.users || []
+  let entries = db.product_day || []
+
+  // Attach manager_name and manager_username to each entry
+  entries = entries.map(e => {
+    const mgr = users.find(u => u.id === e.manager_id)
+    return {
+      ...e,
+      manager_name:     mgr?.full_name     || 'Unknown',
+      manager_username: mgr?.username      || '',
+      manager_territory: mgr?.territory    || '',
+    }
+  })
+
+  if (managerId)  entries = entries.filter(e => e.manager_id === managerId)
+  if (dateFrom)   entries = entries.filter(e => e.date >= dateFrom)
+  if (dateTo)     entries = entries.filter(e => e.date <= dateTo)
+
+  return entries.sort((a,b) => new Date(b.date) - new Date(a.date) || a.manager_name.localeCompare(b.manager_name))
+}
 export function createProductDayEntry(data) {
   const db=getDB()
   if(!db.product_day) db.product_day=[]
@@ -405,9 +480,21 @@ export function getCustomers(territory=null) {
   return c
 }
 export function searchCustomers(query) {
-  if (!query||query.length<1) return []
-  const q=query.toLowerCase()
-  return (getDB().customers||[]).filter(c=>c.name.toLowerCase().includes(q)||c.type?.toLowerCase().includes(q)||c.owner_name?.toLowerCase().includes(q)).slice(0,8)
+  if (!query || query.length < 1) return []
+  const q = query.toLowerCase().trim()
+  const all = getDB().customers || []
+  return all.filter(c =>
+    c.name?.toLowerCase().includes(q) ||
+    c.owner_name?.toLowerCase().includes(q) ||
+    c.phone?.includes(q) ||
+    c.type?.toLowerCase().includes(q) ||
+    c.address?.toLowerCase().includes(q)
+  ).sort((a, b) => {
+    // Exact starts-with first, then by visit count
+    const aE = a.name?.toLowerCase().startsWith(q) ? 0 : 1
+    const bE = b.name?.toLowerCase().startsWith(q) ? 0 : 1
+    return aE - bE || (b.visit_count||0) - (a.visit_count||0)
+  }).slice(0, 10)
 }
 export function createCustomer(data) {
   const db=getDB()
@@ -492,6 +579,9 @@ export function getRecentBrands()    { return getDB().recentBrands||[] }
 // LIVE STATUS (Admin)
 // -------------------------------------------
 export function getLiveStatus() {
+  return cached('liveStatus', 10000, () => _getLiveStatusRaw())
+}
+function _getLiveStatusRaw() {
   const db=getDB()
   const today=new Date().toISOString().split('T')[0]
   return db.users.filter(u=>u.role==='Sales Manager'&&u.is_active!==false).map(m=>{
@@ -509,7 +599,38 @@ export function getLiveStatus() {
       const locs=(db.journey_locations||[]).filter(l=>l.journey_id===activeJourney.id).sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))
       if (locs.length>0) lastGPS={lat:locs[0].latitude,lng:locs[0].longitude,time:locs[0].timestamp,speed:locs[0].speed_kmh}
     }
-    return { id:m.id, name:m.full_name, username:m.username, territory:m.territory||'—', email:m.email, phone:m.phone, status:curr?.status||'In-Office', last_update:curr?.timestamp||null, visits_today:todayVisits.length, last_location:lastVisit?{name:lastVisit.location,lat:lastVisit.latitude,lng:lastVisit.longitude,time:lastVisit.created_at}:null, last_gps:lastGPS, active_journey:activeJourney?{id:activeJourney.id,started_at:activeJourney.start_time,visit_count:todayVisits.length,suspicious_flags:activeJourney.suspicious_flags||0}:null, target:lt, today_sales:todayRpt?.sales_achievement||0 }
+    // Build enriched visits list with visit number
+    const enrichedVisits = todayVisits.map((v, idx) => ({
+      ...v,
+      visit_number: idx + 1,
+      customer_name: v.client_name || v.customer_name || 'Unknown',
+    }))
+    return {
+      id:m.id, name:m.full_name, username:m.username,
+      territory:m.territory||'—', email:m.email, phone:m.phone,
+      status:curr?.status||'In-Office', last_update:curr?.timestamp||null,
+      visits_today:todayVisits.length,
+      today_visits_list: enrichedVisits,  // full list with visit numbers
+      last_location: lastVisit ? {
+        name: lastVisit.location,
+        customer_name: lastVisit.client_name || lastVisit.customer_name || '',
+        customer_type: lastVisit.client_type || '',
+        contact_person: lastVisit.contact_person || '',
+        contact_phone: lastVisit.contact_phone || '',
+        visit_number: todayVisits.length,  // this was the Nth visit
+        lat: lastVisit.latitude, lng: lastVisit.longitude,
+        time: lastVisit.created_at,
+        notes: lastVisit.notes || '',
+      } : null,
+      last_gps: lastGPS,
+      active_journey: activeJourney ? {
+        id: activeJourney.id,
+        started_at: activeJourney.start_time,
+        visit_count: todayVisits.length,
+        suspicious_flags: activeJourney.suspicious_flags||0,
+      } : null,
+      target:lt, today_sales:todayRpt?.sales_achievement||0
+    }
   })
 }
 
@@ -591,6 +712,67 @@ export function detectNearbyCustomers(latitude, longitude, radiusKm=0.2) {
 // HEATMAP DATA — for admin analytics
 // Returns all visit coordinates with weight
 // -------------------------------------------
+
+// -------------------------------------------
+// JOURNEY FULL DATA — for Heatmap journey view
+// Returns all journeys for a manager on a date,
+// with visits attached and distance/time calculations
+// -------------------------------------------
+export function getJourneysForDate(manager_id, date) {
+  const db = getDB()
+  let journeys = db.journeys || []
+  if (manager_id) journeys = journeys.filter(j => j.manager_id === manager_id)
+  if (date)       journeys = journeys.filter(j => j.date === date)
+
+  return journeys.map(journey => {
+    // GPS trail points for this journey
+    const locations = (db.journey_locations || [])
+      .filter(l => l.journey_id === journey.id)
+      .sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp))
+
+    // Visits for this manager on this date (sorted by time)
+    const visits = (db.visits || [])
+      .filter(v => v.manager_id === journey.manager_id && v.visit_date === journey.date)
+      .sort((a,b) => new Date(a.created_at) - new Date(b.created_at))
+      .map((v, i, arr) => {
+        // Previous point — either last visit or journey start
+        const prevLat = i === 0 ? journey.start_latitude  : (arr[i-1].latitude)
+        const prevLng = i === 0 ? journey.start_longitude : (arr[i-1].longitude)
+        const distKm = (prevLat && prevLng && v.latitude && v.longitude)
+          ? calcDistanceKm(prevLat, prevLng, v.latitude, v.longitude)
+          : null
+        // Time since previous point
+        const prevTime = i === 0 ? journey.start_time : arr[i-1].created_at
+        const timeMins = prevTime
+          ? Math.round((new Date(v.created_at) - new Date(prevTime)) / 60000)
+          : null
+        return {
+          ...v,
+          visit_number: i + 1,
+          dist_from_prev_km: distKm,
+          time_from_prev_mins: timeMins,
+          customer_name: v.client_name || v.customer_name || 'Unknown',
+        }
+      })
+
+    // Total distance
+    const totalKm = visits.reduce((s,v) => s + (v.dist_from_prev_km||0), 0)
+
+    return { ...journey, visits, locations, totalKm }
+  }).sort((a,b) => new Date(a.start_time) - new Date(b.start_time))
+}
+
+export function getManagersWithJourneys(date) {
+  const db = getDB()
+  const today = date || new Date().toISOString().split('T')[0]
+  const journeys = (db.journeys || []).filter(j => j.date === today)
+  const mgrIds = [...new Set(journeys.map(j => j.manager_id))]
+  return mgrIds.map(id => {
+    const user = (db.users || []).find(u => u.id === id)
+    return { id, full_name: user?.full_name || 'Unknown', territory: user?.territory || '' }
+  })
+}
+
 export function getHeatmapData(manager_id=null, dateFrom=null, dateTo=null) {
   const db = getDB()
   let visits = db.visits.filter(v => v.latitude && v.longitude)
@@ -648,18 +830,27 @@ export function getAnalytics(manager_id=null, period='month', refDate=null) {
 
   // Build date range
   let dateFrom, dateTo
-  if (period === 'week') {
-    const day = ref.getDay()
-    const mon = new Date(ref); mon.setDate(ref.getDate() - (day===0?6:day-1))
-    const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
-    dateFrom = mon.toISOString().split('T')[0]
-    dateTo   = sun.toISOString().split('T')[0]
-  } else if (period === 'month') {
-    dateFrom = new Date(ref.getFullYear(), ref.getMonth(), 1).toISOString().split('T')[0]
-    dateTo   = new Date(ref.getFullYear(), ref.getMonth()+1, 0).toISOString().split('T')[0]
-  } else if (period === 'year') {
-    dateFrom = ref.getFullYear() + '-01-01'
-    dateTo   = ref.getFullYear() + '-12-31'
+  if (period === 'custom' && typeof refDate === 'object') {
+    dateFrom = refDate.start
+    dateTo = refDate.end
+  } else {
+    const ref = refDate ? new Date(refDate) : new Date()
+    if (period === 'week') {
+      const day = ref.getDay()
+      const mon = new Date(ref); mon.setDate(ref.getDate() - (day===0?6:day-1))
+      const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
+      dateFrom = mon.toISOString().split('T')[0]
+      dateTo   = sun.toISOString().split('T')[0]
+    } else if (period === 'month') {
+      dateFrom = new Date(ref.getFullYear(), ref.getMonth(), 1).toISOString().split('T')[0]
+      dateTo   = new Date(ref.getFullYear(), ref.getMonth()+1, 0).toISOString().split('T')[0]
+    } else if (period === 'year') {
+      dateFrom = ref.getFullYear() + '-01-01'
+      dateTo   = ref.getFullYear() + '-12-31'
+    } else {
+      dateFrom = ref.toISOString().split('T')[0]
+      dateTo   = ref.toISOString().split('T')[0]
+    }
   }
 
   const allVisits = db.visits.filter(v => v.visit_date >= dateFrom && v.visit_date <= dateTo)
@@ -804,8 +995,11 @@ export function shouldShowAlerts() {
   if (day === 0) return false // Sunday
   const hours = now.getHours()
   const mins = now.getMinutes()
-  // Show from 11:00 AM IST onwards
-  return (hours > 11 || (hours === 11 && mins >= 0))
+  // Show from 11:30 AM onwards based on user spec:
+  // "maximum office time is 10:00 AM and on field sale manager can start visit 11:00 AM so notification message need to be at 11:30 AM"
+  if (hours > 11) return true
+  if (hours === 11 && mins >= 30) return true
+  return false
 }
 
 export function getAlertDismissKey() {
@@ -867,12 +1061,3 @@ export function getTerritoryStats() {
   const managers = db.users.filter(u => u.role === 'Sales Manager' && u.is_active !== false)
   const territories = {}
   managers.forEach(m => {
-    const t = m.territory || 'Unassigned'
-    if (!territories[t]) territories[t] = { name:t, managers:0, visits_today:0, visits_total:0, customers:0 }
-    territories[t].managers++
-    territories[t].visits_today += db.visits.filter(v => v.manager_id === m.id && v.visit_date === today).length
-    territories[t].visits_total += db.visits.filter(v => v.manager_id === m.id).length
-    territories[t].customers += (db.customers || []).filter(c => c.territory === t).length
-  })
-  return Object.values(territories).sort((a,b) => b.visits_total - a.visits_total)
-}

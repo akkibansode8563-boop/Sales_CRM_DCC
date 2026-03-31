@@ -1070,3 +1070,5 @@ export function getTerritoryStats() {
   })
   return Object.values(territories).sort((a,b) => b.visits_total - a.visits_total)
 }
+
+    

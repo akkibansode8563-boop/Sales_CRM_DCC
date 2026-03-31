@@ -1584,12 +1584,3 @@ useEffect(() => {
   )
 }
 
-function SalesHeatmapInline({ onReplay }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <>
-      <button id="shm-inline-trigger" style={{display:'none'}} onClick={()=>setOpen(true)}/>
-      {open && <SalesHeatmap onClose={()=>setOpen(false)}/>}
-    </>
-  )
-}
