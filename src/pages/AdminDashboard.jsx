@@ -98,6 +98,7 @@ export default function AdminDashboard() {
   const [showSetupGuide,  setShowSetupGuide] = useState(false)
   const [analyticsPeriod, setAnalyticsPeriod] = useState('month')
   const [analyticsDate,   setAnalyticsDate]   = useState(new Date().toISOString().split('T')[0])
+  const [analyticsEndDate,setAnalyticsEndDate]= useState(new Date().toISOString().split('T')[0])
   const [analyticsData,   setAnalyticsData]   = useState(null)
   const [analyticsMgrId,  setAnalyticsMgrId]  = useState(null)
   const [alerts,          setAlerts]          = useState([])
@@ -163,11 +164,11 @@ export default function AdminDashboard() {
     }
   }
 
-  const loadAnalytics = useCallback((period, date, mgrId=null) => {
-    try { setAnalyticsData(getAnalytics(mgrId, period, date) || null) }
+  const loadAnalytics = useCallback((period, date, endDate, mgrId=null) => {
+    try { setAnalyticsData(getAnalytics(mgrId, period, period === 'custom' ? { start: date, end: endDate } : date) || null) }
     catch(e) { console.error('getAnalytics', e); setAnalyticsData(null) }
   }, [])
-  useEffect(() => { loadAnalytics(analyticsPeriod, analyticsDate, analyticsMgrId) }, [analyticsPeriod, analyticsDate, analyticsMgrId, loadAnalytics])
+  useEffect(() => { loadAnalytics(analyticsPeriod, analyticsDate, analyticsEndDate, analyticsMgrId) }, [analyticsPeriod, analyticsDate, analyticsEndDate, analyticsMgrId, loadAnalytics])
 
   useEffect(() => {
     // Request system notification permission for Admin alerts
@@ -1188,13 +1189,21 @@ useEffect(() => {
               <div style={{background:'#fff',borderRadius:12,padding:'14px 18px',boxShadow:'0 1px 4px rgba(0,0,0,0.07)',marginBottom:16}}>
                 <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',marginBottom:12}}>
                   <div style={{fontWeight:800,fontSize:'0.9rem',color:'#111827'}}>Analytics</div>
-                  {['week','month','year'].map(p => (
+                  {['week','month','year','custom'].map(p => (
                     <button key={p} onClick={()=>setAnalyticsPeriod(p)}
                       style={{padding:'6px 16px',borderRadius:8,border:'1.5px solid',fontWeight:700,fontSize:'0.8rem',cursor:'pointer',background:analyticsPeriod===p?'#2563eb':'#f9fafb',color:analyticsPeriod===p?'#fff':'#6b7280',borderColor:analyticsPeriod===p?'#2563eb':'#e5e7eb'}}>
                       {p.charAt(0).toUpperCase()+p.slice(1)}
                     </button>
                   ))}
-                  <input type="date" value={analyticsDate} onChange={e=>setAnalyticsDate(e.target.value)} style={{padding:'6px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:'0.8rem',color:'#374151'}}/>
+                  {analyticsPeriod === 'custom' ? (
+                    <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                      <input type="date" value={analyticsDate} onChange={e=>setAnalyticsDate(e.target.value)} style={{padding:'6px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:'0.8rem',color:'#374151'}}/>
+                      <span style={{color:'#9ca3af',fontWeight:600,fontSize:'0.8rem'}}>to</span>
+                      <input type="date" value={analyticsEndDate} onChange={e=>setAnalyticsEndDate(e.target.value)} style={{padding:'6px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:'0.8rem',color:'#374151'}}/>
+                    </div>
+                  ) : (
+                    <input type="date" value={analyticsDate} onChange={e=>setAnalyticsDate(e.target.value)} style={{padding:'6px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:'0.8rem',color:'#374151'}}/>
+                  )}
                   {analyticsData && (
                     <span style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
                       <span style={{fontSize:'0.75rem',color:'#9ca3af',fontWeight:600}}>{analyticsData.dateFrom} to {analyticsData.dateTo}</span>
@@ -1565,12 +1574,3 @@ useEffect(() => {
   )
 }
 
-function SalesHeatmapInline({ onReplay }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <>
-      <button id="shm-inline-trigger" style={{display:'none'}} onClick={()=>setOpen(true)}/>
-      {open && <SalesHeatmap onClose={()=>setOpen(false)}/>}
-    </>
-  )
-}
