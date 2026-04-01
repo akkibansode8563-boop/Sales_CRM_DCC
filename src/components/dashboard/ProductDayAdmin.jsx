@@ -45,6 +45,7 @@ export default memo(function ProductDayAdmin({ managers = [], onRefresh }) {
   const [rawEntries,   setRawEntries]   = useState([])
   const [loading,      setLoading]      = useState(false)
   const [lastRefresh,  setLastRefresh]  = useState(Date.now())
+  const safeManagers = useMemo(() => Array.isArray(managers) ? managers.filter(Boolean) : [], [managers])
 
   // ── Auto-refresh every 30s ──────────────────────────────────
   useEffect(() => {
@@ -71,7 +72,7 @@ export default memo(function ProductDayAdmin({ managers = [], onRefresh }) {
       }
       const mgrId = filterMgr === 'all' ? null : parseInt(filterMgr)
       const all = getAllProductDayEntriesSync(from, to, mgrId) || []
-      setRawEntries(all)
+      setRawEntries(Array.isArray(all) ? all : [])
     } catch(e) {
       setRawEntries([])
     }
@@ -79,15 +80,28 @@ export default memo(function ProductDayAdmin({ managers = [], onRefresh }) {
   }, [viewMode, selDate, selMonth, selYear, dateFrom, dateTo, filterMgr, lastRefresh])
 
   // ── Derive available brands from loaded entries ─────────────
+  const safeEntries = useMemo(() => (Array.isArray(rawEntries) ? rawEntries : []).map((entry) => ({
+    ...entry,
+    date: entry?.date || '',
+    manager_name: entry?.manager_name || 'Unknown',
+    manager_territory: entry?.manager_territory || '',
+    brand: entry?.brand || '',
+    product_name: entry?.product_name || 'Unknown product',
+    target_amount: Number(entry?.target_amount || 0),
+    achieved_amount: Number(entry?.achieved_amount || 0),
+    target_qty: Number(entry?.target_qty || 0),
+    achieved_qty: Number(entry?.achieved_qty || 0),
+  })), [rawEntries])
+
   const allBrands = useMemo(() => {
-    const brands = [...new Set(rawEntries.map(e => e.brand).filter(Boolean))].sort()
+    const brands = [...new Set(safeEntries.map(e => e.brand).filter(Boolean))].sort()
     return brands
-  }, [rawEntries])
+  }, [safeEntries])
 
   // ── Apply brand filter ──────────────────────────────────────
   const entries = useMemo(() =>
-    filterBrand === 'all' ? rawEntries : rawEntries.filter(e => e.brand === filterBrand),
-  [rawEntries, filterBrand])
+    filterBrand === 'all' ? safeEntries : safeEntries.filter(e => e.brand === filterBrand),
+  [safeEntries, filterBrand])
 
   // ── Summary KPIs ────────────────────────────────────────────
   const kpis = useMemo(() => {
@@ -222,7 +236,7 @@ export default memo(function ProductDayAdmin({ managers = [], onRefresh }) {
           <div style={labelStyle}>Manager</div>
           <select value={filterMgr} onChange={e => setFilterMgr(e.target.value)} style={{...inputS, maxWidth: 160}}>
             <option value="all">All Managers</option>
-            {managers.filter(m => m.role !== 'Admin').map(m => (
+            {safeManagers.filter(m => m.role !== 'Admin').map(m => (
               <option key={m.id} value={m.id}>{m.full_name}</option>
             ))}
           </select>

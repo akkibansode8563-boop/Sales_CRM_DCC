@@ -13,6 +13,8 @@ export function createVisitDraft() {
     longitude: null,
     photo: null,
     voice_note: null,
+    follow_up_date: '',
+    follow_up_note: '',
   }
 }
 

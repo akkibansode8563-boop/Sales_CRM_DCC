@@ -509,6 +509,23 @@
 .cc-visits { font-size: 0.68rem; color: var(--text-4); font-weight: 600; }
 .cc-gps { background: #F0FDF4; color: #059669; font-size: 0.6rem; font-weight: 700; padding: 2px 7px; border-radius: var(--r-full); }
 .cc-visit-btn { margin-left: auto; background: var(--primary); color: #fff; border: none; border-radius: 8px; padding: 7px 14px; font-size: 0.72rem; font-weight: 800; cursor: pointer; font-family: var(--font); }
+.cust-followup-panel {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow-xs);
+}
+.cust-followup-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.cust-followup-title { font-size: 0.76rem; font-weight: 800; color: #9a3412; text-transform: uppercase; letter-spacing: 0.06em; }
+.cust-followup-chip { background: #ea580c; color: #fff; font-size: 0.66rem; font-weight: 800; min-width: 24px; height: 24px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; }
+.cust-followup-list { display: flex; flex-direction: column; gap: 8px; }
+.cust-followup-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: rgba(255,255,255,0.78); border: 1px solid #fdba74; border-radius: 12px; }
+.cust-followup-item-body { flex: 1; min-width: 0; }
+.cust-followup-item-title { font-size: 0.78rem; font-weight: 700; color: #7c2d12; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cust-followup-item-meta { font-size: 0.67rem; color: #9a3412; margin-top: 2px; }
+.cust-followup-done { border: none; background: #2563eb; color: #fff; border-radius: 9px; padding: 7px 12px; font-size: 0.68rem; font-weight: 800; cursor: pointer; }
 
 /* -- Heatmap action cards in admin -- */
 .heatmap-action-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }

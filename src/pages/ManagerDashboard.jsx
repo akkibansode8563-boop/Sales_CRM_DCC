@@ -14,8 +14,11 @@ import {
     getActiveJourneySync   as getActiveJourney,
     getTodayVisitsSync     as getTodayVisits,
     getCustomersSync       as getCustomers,
+    getTasksSync           as getTasks,
     updateStatus,
     createVisit,
+    createTask,
+    updateTask,
     startJourney,
     endJourney,
     saveDailySalesReport,
@@ -95,6 +98,7 @@ export default function ManagerDashboard() {
   const [targets,          setTargets]          = useState([])
   const [reports,          setReports]          = useState([])
   const [products,         setProducts]         = useState([])
+  const [tasks,            setTasks]            = useState([])
   const [suggestions,      setSuggestions]      = useState([])
   const [toast,            setToast]            = useState(null)
   const [showMap,          setShowMap]          = useState(false)
@@ -142,6 +146,23 @@ export default function ManagerDashboard() {
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
   // Profile picture — persisted in localStorage per user
   const [profilePic, setProfilePic]         = useState(() => getStoredProfilePic(user?.id))
+  const normalizeCustomerText = useCallback((value = '') => String(value).trim().toLowerCase(), [])
+  const sortedCustomers = useMemo(
+    () => [...(customers || [])].sort((a, b) => (a?.name || '').localeCompare(b?.name || '')),
+    [customers]
+  )
+  const customerLookup = useMemo(() => {
+    const byId = new Map()
+    const byName = new Map()
+
+    sortedCustomers.forEach((customer) => {
+      if (customer?.id != null) byId.set(customer.id, customer)
+      const key = normalizeCustomerText(customer?.name)
+      if (key) byName.set(key, customer)
+    })
+
+    return { byId, byName }
+  }, [normalizeCustomerText, sortedCustomers])
 
   const today = new Date().toISOString().split('T')[0]
 
@@ -158,11 +179,38 @@ export default function ManagerDashboard() {
     setProfilePic(getStoredProfilePic(user?.id))
   }, [user?.id])
 
+  const compressVisitImage = useCallback((file) => new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Could not read image'))
+    reader.onload = (event) => {
+      const img = new Image()
+      img.onerror = () => reject(new Error('Could not process image'))
+      img.onload = () => {
+        const maxSide = 1440
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height))
+        const width = Math.max(1, Math.round(img.width * scale))
+        const height = Math.max(1, Math.round(img.height * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          reject(new Error('Could not process image'))
+          return
+        }
+        ctx.drawImage(img, 0, 0, width, height)
+        resolve(canvas.toDataURL('image/jpeg', 0.78))
+      }
+      img.src = event.target.result
+    }
+    reader.readAsDataURL(file)
+  }), [])
+
   /* -- Photo Capture -- */
   const capturePhoto = () => {
     const input = document.createElement('input')
     input.type = 'file'; input.accept = 'image/*'; input.capture = 'environment'
-    input.onchange = e => {
+    input.onchange = async e => {
       const file = e.target.files[0]
       if (!file) return
       const reader = new FileReader()
@@ -172,6 +220,24 @@ export default function ManagerDashboard() {
         toastMsg('Photo captured ✅')
       }
       reader.readAsDataURL(file)
+    }
+    input.click()
+  }
+
+  const capturePhotoCompressed = () => {
+    const input = document.createElement('input')
+    input.type = 'file'; input.accept = 'image/*'; input.capture = 'environment'
+    input.onchange = async e => {
+      const file = e.target.files[0]
+      if (!file) return
+      try {
+        const compressed = await compressVisitImage(file)
+        setVisitPhoto(compressed)
+        setPhotoPreview(compressed)
+        toastMsg('Photo captured')
+      } catch {
+        toastMsg('Could not process image', 'error')
+      }
     }
     input.click()
   }
@@ -276,7 +342,63 @@ export default function ManagerDashboard() {
   const reloadJourney   = useCallback(() => { if (user?.id) setJourney(getActiveJourney(user.id)) }, [user?.id])
   const reloadReports   = useCallback(() => { if (user?.id) setReports(getDailySalesReports(user.id)) }, [user?.id])
   const reloadProducts  = useCallback(() => { if (user?.id) setProducts(getProductDayEntries(user.id)) }, [user?.id])
+  const reloadTasks     = useCallback(() => { if (user?.id) setTasks(getTasks(user.id)) }, [user?.id])
   const reloadCustomers = useCallback(() => setCustomers(getCustomers()), [])
+
+  const applyCustomerToVisitForm = useCallback((customer, fallbackName = '') => {
+    if (!customer) {
+      setVf((prev) => ({ ...prev, customer_name: fallbackName || prev.customer_name, customer_id: null }))
+      return
+    }
+
+    setVf((prev) => ({
+      ...prev,
+      customer_name: customer.name || fallbackName || prev.customer_name,
+      customer_id: customer.id ?? null,
+      client_type: customer.type || prev.client_type,
+      location: customer.address || prev.location,
+      contact_person: customer.owner_name || prev.contact_person,
+      contact_phone: customer.phone || prev.contact_phone,
+    }))
+  }, [])
+
+  const handleVisitCustomerChange = useCallback((value) => {
+    const exactMatch = customerLookup.byName.get(normalizeCustomerText(value))
+    if (exactMatch) {
+      applyCustomerToVisitForm(exactMatch, value)
+      return
+    }
+
+    setVf((prev) => ({ ...prev, customer_name: value, customer_id: null }))
+  }, [applyCustomerToVisitForm, customerLookup.byName, normalizeCustomerText])
+
+  const smartSearchCustomers = useCallback(async (query) => {
+    const localMatches = sortedCustomers
+      .filter((customer) => {
+        const q = normalizeCustomerText(query)
+        if (!q) return false
+        return (
+          normalizeCustomerText(customer?.name).includes(q) ||
+          normalizeCustomerText(customer?.owner_name).includes(q) ||
+          normalizeCustomerText(customer?.phone).includes(q) ||
+          normalizeCustomerText(customer?.address).includes(q)
+        )
+      })
+      .slice(0, 8)
+
+    try {
+      const remoteMatches = await searchCustomers(query)
+      const seen = new Set()
+      return [...localMatches, ...(remoteMatches || [])].filter((customer) => {
+        const key = customer?.id || normalizeCustomerText(customer?.name)
+        if (!key || seen.has(key)) return false
+        seen.add(key)
+        return true
+      }).slice(0, 8)
+    } catch {
+      return localMatches
+    }
+  }, [normalizeCustomerText, sortedCustomers])
 
   // Full reload — only call on mount or major state changes
   const reload = useCallback(() => {
@@ -288,6 +410,7 @@ export default function ManagerDashboard() {
     setTargets(getTargets(user.id))
     setReports(getDailySalesReports(user.id))
     setProducts(getProductDayEntries(user.id))
+    setTasks(getTasks(user.id))
     setSuggestions(getAISuggestions(user.id))
     setCustomers(getCustomers())
     setTerritories(getTerritories())
@@ -527,7 +650,7 @@ export default function ManagerDashboard() {
       const draftError = validateVisitDraft({ ...data, customer_name: data.client_name, photo: data.photo })
       if (draftError) { toastMsg(draftError, 'error'); return }
       const customerId = await ensureVisitCustomer({ ...data, customer_name: data.client_name })
-      await createVisit({
+      const visit = await createVisit({
         manager_id:user.id,
         visit_date:today,
         customer_id:customerId,
@@ -573,6 +696,21 @@ export default function ManagerDashboard() {
         photo:visitPhoto||null,
         voice_note:voiceNote||null,
       })
+      if (vf.follow_up_date) {
+        await createTask({
+          manager_id: user.id,
+          customer_id: customerId,
+          visit_id: visit?.id || null,
+          title: `Follow up with ${vf.customer_name}`,
+          description: vf.follow_up_note?.trim() || vf.notes?.trim() || `Planned after ${vf.visit_type.toLowerCase()}`,
+          status: 'open',
+          priority: vf.visit_type === 'Follow-up' ? 'high' : 'medium',
+          due_at: new Date(`${vf.follow_up_date}T10:00:00`).toISOString(),
+          reminder_at: new Date(`${vf.follow_up_date}T09:00:00`).toISOString(),
+          created_by: user.id,
+          assigned_by: user.id,
+        })
+      }
       setVisitModal(false)
       setVf(initVF())
       setVisitPhoto(null); setPhotoPreview(null)
@@ -614,11 +752,23 @@ export default function ManagerDashboard() {
     if (showToast) toastMsg('Deleted')
   }
   const prodPct = pf.target_qty>0&&pf.achieved_qty>0 ? Math.round((+pf.achieved_qty/+pf.target_qty)*100) : null
+  const handleTaskStatusChange = async (taskId, nextStatus) => {
+    const optimisticCompletedAt = nextStatus === 'completed' ? new Date().toISOString() : null
+    setTasks(prev => prev.map(task => task.id === taskId ? { ...task, status: nextStatus, completed_at: optimisticCompletedAt } : task))
+    try {
+      await updateTask(taskId, { status: nextStatus, updated_by: user?.id || null })
+      reloadTasks()
+    } catch (error) {
+      reloadTasks()
+      toastMsg(error.message || 'Could not update follow-up', 'error')
+    }
+  }
 
   /* -- Computed (memoized to avoid re-calc on every render) -- */
   const todayReport   = useMemo(() => reports.find(r=>r.date===today),   [reports, today])
   const todayProducts = useMemo(() => products.filter(p=>p.date===today), [products, today])
   const pastProducts  = useMemo(() => products.filter(p=>p.date!==today), [products, today])
+  const activeTasks   = useMemo(() => tasks.filter(task => task.status !== 'completed' && !task.deleted_at), [tasks])
   const latestTarget  = useMemo(() => [...targets].sort((a,b)=>b.year-a.year||b.month-a.month)[0], [targets])
   const visitPct      = useMemo(() => latestTarget?.visit_target ? Math.min((todayVisits.length/latestTarget.visit_target)*100,100) : 0, [todayVisits.length, latestTarget])
   const salesPct      = useMemo(() => latestTarget?.sales_target&&todayReport ? Math.min((todayReport.sales_achievement/latestTarget.sales_target)*100,100) : 0, [todayReport, latestTarget])
@@ -711,7 +861,7 @@ export default function ManagerDashboard() {
                   <div className="nb-meta">{c.type} · {Math.round(c.dist*1000)}m away</div>
                 </div>
                 <button className="nb-visit-btn" onClick={()=>{
-                  setVf(p=>({...p,customer_name:c.name,customer_id:c.id,client_type:c.type,location:c.address}))
+                  applyCustomerToVisitForm(c)
                   setVisitModal(true); setNearbyCustomers([])
                 }}>Log Visit</button>
               </div>
@@ -1109,6 +1259,31 @@ export default function ManagerDashboard() {
                 Nearby
               </button>
             </div>
+            {activeTasks.length > 0 && (
+              <div className="cust-followup-panel">
+                <div className="cust-followup-head">
+                  <span className="cust-followup-title">Open Follow-ups</span>
+                  <span className="cust-followup-chip">{activeTasks.length}</span>
+                </div>
+                <div className="cust-followup-list">
+                  {activeTasks.slice(0, 4).map(task => (
+                    <div key={task.id} className="cust-followup-item">
+                      <div className="cust-followup-item-body">
+                        <div className="cust-followup-item-title">{task.title}</div>
+                        <div className="cust-followup-item-meta">
+                          {task.due_at
+                            ? `Due ${new Date(task.due_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}`
+                            : 'No due date'}
+                        </div>
+                      </div>
+                      <button className="cust-followup-done" onClick={()=>handleTaskStatusChange(task.id, 'completed')}>
+                        Done
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {customers.length===0
               ? <div className="empty"><div className="empty-ico">🏪</div><div className="empty-txt">No customers yet.</div><button className="empty-cta" onClick={()=>setShowAddCustomer(true)}>Add First Customer</button></div>
               : customers.filter(c=>!customerFilter||c.name.toLowerCase().includes(customerFilter.toLowerCase())||c.owner_name?.toLowerCase().includes(customerFilter.toLowerCase())).map(c=>(
@@ -1130,7 +1305,7 @@ export default function ManagerDashboard() {
                     <span className="cc-visits">{c.visit_count||0} visits</span>
                     {c.latitude && <span className="cc-gps">🛰️ GPS</span>}
                     <button className="cc-visit-btn" onClick={()=>{
-                      setVf(p=>({...p,customer_name:c.name,customer_id:c.id,client_type:c.type,location:c.address||''}))
+                      applyCustomerToVisitForm(c)
                       setVisitModal(true)
                     }}>Log Visit</button>
                   </div>
@@ -1329,10 +1504,10 @@ export default function ManagerDashboard() {
                 <label>Customer Name *</label>
                 <AutocompleteInput
                   value={vf.customer_name}
-                  onChange={v => setVf(p=>({...p, customer_name:v, customer_id:null}))}
-                  onSelect={c => c && setVf(p=>({...p, customer_name:c.name, customer_id:c.id, client_type:c.type||p.client_type, location:c.address||p.location, contact_person:c.owner_name||p.contact_person, contact_phone:c.phone||p.contact_phone}))}
+                  onChange={handleVisitCustomerChange}
+                  onSelect={c => c && applyCustomerToVisitForm(c)}
                   placeholder="Search customer or type new name…"
-                  searchFn={searchCustomers}
+                  searchFn={smartSearchCustomers}
                   recentsFn={getRecentCustomers}
                   renderItem={c => <span className="ac-item-name">{c.name}</span>}
                   renderMeta={c => <span className="ac-type-tag">{c.type}</span>}
@@ -1385,6 +1560,17 @@ export default function ManagerDashboard() {
                 <textarea value={vf.notes} onChange={e=>setVf(p=>({...p,notes:e.target.value}))} placeholder="Orders placed, discussions, follow-ups…" rows={3}/>
               </div>
 
+              <div className="row-2">
+                <div className="fg">
+                  <label>Next Follow-up Date</label>
+                  <input type="date" value={vf.follow_up_date} min={today} onChange={e=>setVf(p=>({...p,follow_up_date:e.target.value}))}/>
+                </div>
+                <div className="fg">
+                  <label>Follow-up Note</label>
+                  <input value={vf.follow_up_note} onChange={e=>setVf(p=>({...p,follow_up_note:e.target.value}))} placeholder="Payment reminder, quotation, callback…"/>
+                </div>
+              </div>
+
               {/* -- Photo Capture -- */}
               <div className="fg">
                 <label>Visit Photo *</label>
@@ -1397,7 +1583,7 @@ export default function ManagerDashboard() {
                         display:'flex',alignItems:'center',justifyContent:'center'}}>&#x2715;</button>
                   </div>
                 ) : (
-                  <button onClick={capturePhoto}
+                  <button onClick={capturePhotoCompressed}
                     style={{width:'100%',padding:'12px',border:'1.5px dashed #D1D5DB',borderRadius:10,
                       background:'#F9FAFB',color:'#374151',cursor:'pointer',display:'flex',
                       alignItems:'center',justifyContent:'center',gap:8,fontSize:'0.82rem',fontWeight:600}}>

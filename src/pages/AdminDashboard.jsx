@@ -18,7 +18,8 @@ import {
     getTargetsSync         as getTargets,
     getJourneyHistorySync  as getJourneyHistory,
     getAllVisitsAllSync,
-    getCustomersSync
+    getCustomersSync,
+    getTasksSync
   } from '../utils/supabaseDB'
 import { lazy, Suspense } from 'react'
 import { getStorageMode, isSupabaseConfigured } from '../utils/supabaseClient'
@@ -103,6 +104,7 @@ export default function AdminDashboard() {
   const [overviewChartType, setOverviewChartType] = useState('sales')
   const [allCustomers,    setAllCustomers]    = useState([])
   const [allVisitsData,   setAllVisitsData]   = useState([])
+  const [allTasks,        setAllTasks]        = useState([])
   const [offlineCount,    setOfflineCount]    = useState(0)
   const [syncStatus,      setSyncStatus]      = useState('idle')
   const [lastSyncAt,      setLastSyncAt]      = useState(() => getLastSyncAt())
@@ -123,6 +125,7 @@ export default function AdminDashboard() {
     try { const t = getTerritoryStats(); setTerrStats(Array.isArray(t) ? t : []) }   catch(e) { console.error('getTerritoryStats',e); setTerrStats([]) }
     try { const c = getCustomersSync(); setAllCustomers(Array.isArray(c) ? c : []) } catch(e) { console.error('getCustomers',e);     setAllCustomers([]) }
     try { const v = getAllVisitsAllSync(); setAllVisitsData(Array.isArray(v) ? v : []) } catch(e) { console.error('getAllVisitsAll',e); setAllVisitsData([]) }
+    try { const t = getTasksSync(); setAllTasks(Array.isArray(t) ? t : []) } catch(e) { console.error('getTasks',e); setAllTasks([]) }
     try { setOfflineCount(getQueueCount() || 0) } catch(e) { setOfflineCount(0) }
   }, [])
 
@@ -226,20 +229,61 @@ export default function AdminDashboard() {
     toastMsg('Targets set for ' + selectedMgrs.length + ' manager(s)'); reload()
   }
 
-    const salesManagers    = Array.isArray(users)    ? users.filter(u=>u.role==='Sales Manager') : []
+  const salesManagers    = Array.isArray(users)    ? users.filter(u=>u.role==='Sales Manager') : []
   const onField          = Array.isArray(managers) ? managers.filter(m=>m.status==='On Field').length : 0
   const totalVisitsToday = Array.isArray(managers) ? managers.reduce((s,m)=>s+(m.visits_today||0),0) : 0
   const activeJourneys   = Array.isArray(managers) ? managers.filter(m=>m.active_journey).length : 0
   const totalSalesToday  = Array.isArray(managers) ? managers.reduce((s,m)=>s+(m.today_sales||0),0) : 0
+  const customersById = useMemo(() => new Map((allCustomers || []).map(c => [c.id, c])), [allCustomers])
+  const taskSummary = useMemo(() => {
+    const openTasks = (allTasks || []).filter(task => task.status !== 'completed' && !task.deleted_at)
+    const overdueTasks = openTasks.filter(task => task.due_at && new Date(task.due_at) < new Date())
+    const tasksByManager = new Map()
+    openTasks.forEach((task) => {
+      if (!tasksByManager.has(task.manager_id)) tasksByManager.set(task.manager_id, [])
+      tasksByManager.get(task.manager_id).push(task)
+    })
+    tasksByManager.forEach((tasks, managerId) => {
+      tasksByManager.set(managerId, [...tasks].sort((a, b) => new Date(a?.due_at || a?.created_at || 0) - new Date(b?.due_at || b?.created_at || 0)))
+    })
+    return { openTasks, overdueTasks, tasksByManager }
+  }, [allTasks])
+  const visitsByManager = useMemo(() => {
+    const map = new Map()
+    ;(allVisitsData || []).forEach((visit) => {
+      if (!map.has(visit.manager_id)) map.set(visit.manager_id, [])
+      map.get(visit.manager_id).push(visit)
+    })
+    map.forEach((visits, managerId) => {
+      map.set(managerId, [...visits].sort((a,b) => new Date(a.created_at) - new Date(b.created_at)))
+    })
+    return map
+  }, [allVisitsData])
+
+  const getVisitCustomerDetails = useCallback((visit) => {
+    const customer = customersById.get(visit?.customer_id)
+    return [
+      customer?.owner_name || visit?.contact_person || '',
+      customer?.phone || visit?.contact_phone || '',
+      customer?.type || visit?.client_type || '',
+    ].filter(Boolean).join(' • ')
+  }, [customersById])
 
   const buildManagerData = useCallback((date=today) => {
     return salesManagers.map((m,i) => {
-      const mVisits = getAllVisits(m.id) || []
-      const dayVisits   = mVisits.filter(v=>v.visit_date===date)
+      const mVisits = visitsByManager.get(m.id) || []
+      const dayVisits = mVisits
+        .filter(v=>v.visit_date===date)
+        .map((visit, index) => ({
+          ...visit,
+          visit_number: index + 1,
+          customer_details: getVisitCustomerDetails(visit),
+        }))
       const reports = getDailySalesReports(m.id) || []
       const dayReport   = reports.find(r=>r.date===date)
      const allProds = getProductDayEntries(m.id) || []
       const dayProducts = allProds.filter(p=>p.date===date)
+      const managerTasks = taskSummary.tasksByManager.get(m.id) || []
       const targets = getTargets(m.id) || []
       const monthTarget = targets.find(t=>t.month===new Date(date).getMonth()+1&&t.year===new Date(date).getFullYear())
                        || targets.sort((a,b)=>b.year-a.year||b.month-a.month)[0]
@@ -253,10 +297,13 @@ export default function AdminDashboard() {
         ...m, color: AVATAR_COLORS[i%AVATAR_COLORS.length],
         dayVisits, dayReport, dayProducts, monthTarget, journeys, liveData,
         salesPct, visitPct, totalProdAchieved, totalProdTarget,
+        openTasks: managerTasks.length,
+        overdueTasks: managerTasks.filter(task => task.due_at && new Date(task.due_at) < new Date()).length,
+        nextTask: managerTasks[0] || null,
         allVisitsCount: mVisits.length, totalReports: reports.length, totalProducts: allProds.length,
       }
     })
-  }, [salesManagers, managers, today])
+  }, [getVisitCustomerDetails, managers, salesManagers, taskSummary.tasksByManager, today, visitsByManager])
 const [managerRows, setManagerRows] = useState([])
 useEffect(() => {
   if (!salesManagers || salesManagers.length === 0) {
@@ -318,6 +365,7 @@ useEffect(() => {
         { n:onField,              l:'On Field Now',   ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>, bg:'#ECFDF5', tc:'#059669', pill:onField>0?'Active':'None' },
         { n:totalVisitsToday,     l:'Visits Today',   ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>, bg:'#FFFBEB', tc:'#D97706', pill:activeJourneys + ' live routes' },
         { n:fmt(totalSalesToday), l:'Sales Today',    ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>, bg:'#F5F3FF', tc:'#7C3AED', pill:'all managers' },
+        { n:taskSummary.overdueTasks.length, l:'Overdue Tasks', ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></svg>, bg:'#FEF2F2', tc:'#DC2626', pill:taskSummary.openTasks.length + ' open tasks' },
       ].map((k,i) => (
         <div key={i} className="akpi">
           <div className="akpi-top">
@@ -551,7 +599,7 @@ useEffect(() => {
                       : (
                         <table className="analytics-table">
                           <thead className="at-head">
-                            <tr><th>Manager</th><th>Status</th><th>Visits</th><th>Sales</th><th>Achv%</th><th>Journey</th><th></th></tr>
+                            <tr><th>Manager</th><th>Status</th><th>Visits</th><th>Sales</th><th>Tasks</th><th>Achv%</th><th>Journey</th><th></th></tr>
                           </thead>
                           <tbody className="at-body">
                             {(managerRows || []).map(m => {
@@ -655,7 +703,13 @@ useEffect(() => {
                               </div>
                             </div>
                             {m.last_location && (
-                              <div className="lc-location">&#x1F4CD; {(m.last_location?.name||'').split(',').slice(0,2).join(', ')} &middot; {fmtTime(m.last_location?.time)}</div>
+                              <div className="lc-location">
+                                &#x1F4CD; {(m.last_location?.name||'').split(',').slice(0,2).join(', ')}
+                                {m.last_location?.customer_name ? ` • ${m.last_location.customer_name}` : ''}
+                                {m.last_location?.customer_details ? ` • ${m.last_location.customer_details}` : ''}
+                                {m.last_location?.visit_number ? ` • Visit ${m.last_location.visit_number}` : ''}
+                                {' '}&middot; {fmtTime(m.last_location?.time)}
+                              </div>
                             )}
                             <div className="lc-drill-hint">Tap for full detail &#x2192;</div>
                           </div>
@@ -732,10 +786,15 @@ useEffect(() => {
                               <div className="mfc-section-lbl">Today's Visits</div>
                               {m.dayVisits.slice(0,3).map((v,i) => (
                                 <div key={v.id} className="mfc-visit-row">
-                                  <span className="mfc-visit-num" style={{background:AVATAR_COLORS[i%AVATAR_COLORS.length]}}>{i+1}</span>
+                                  <span className="mfc-visit-num" style={{background:AVATAR_COLORS[i%AVATAR_COLORS.length]}}>{v.visit_number || i+1}</span>
                                   <div className="mfc-visit-body">
                                     <div className="mfc-visit-name">{v.client_name||v.customer_name}</div>
-                                    <div className="mfc-visit-meta">{v.client_type}&nbsp;&nbsp;{v.location?.split(',')[0]}</div>
+                                    <div className="mfc-visit-meta">
+                                      {`Visit ${v.visit_number || i+1}`}
+                                      {v.client_type ? ` • ${v.client_type}` : ''}
+                                      {v.location ? ` • ${v.location?.split(',')[0]}` : ''}
+                                      {v.customer_details ? ` • ${v.customer_details}` : ''}
+                                    </div>
                                   </div>
                                   <span className="mfc-visit-time">{fmtTime(v.created_at)}</span>
                                 </div>
@@ -886,12 +945,13 @@ useEffect(() => {
                             ? <div className="empty" style={{padding:'32px 0'}}><div className="empty-ico"></div><div className="empty-txt">No visits on {fmtDateShort(drillDate)}.</div></div>
                             : (drillData?.dayVisits || []).map((v,i) => (
                               <div key={v.id} className="dd-visit-row">
-                                <div className="ddv-num" style={{background:AVATAR_COLORS[i%AVATAR_COLORS.length]}}>{i+1}</div>
+                                <div className="ddv-num" style={{background:AVATAR_COLORS[i%AVATAR_COLORS.length]}}>{v.visit_number || i+1}</div>
                                 <div className="ddv-body">
-                                  <div className="ddv-name">{v.client_name||v.customer_name}</div>
+                                  <div className="ddv-name">{`Visit ${v.visit_number || i+1} • ${v.client_name||v.customer_name}`}</div>
                                   <div className="ddv-meta">
                                     <span className="ddv-tag">{v.client_type}</span>
                                     <span>{v.location?.split(',')[0]}</span>
+                                    {v.customer_details && <span>{v.customer_details}</span>}
                                   </div>
                                   {v.notes && <div className="ddv-notes">{v.notes}</div>}
                                   <div className="ddv-type">{v.visit_type}</div>
@@ -1245,7 +1305,7 @@ useEffect(() => {
             <div className="panel">
               <SectionHeader title="&#x1F3EA; Customer Intelligence" count={allCustomers.length} subtitle="Visit history, purchase patterns and priority scoring" actions={<button className="panel-action" onClick={reload}>Refresh</button>}/>
               <div className="panel-body" style={{padding:'16px'}}>
-                <Suspense fallback={null}><CustomerIntelligence customers={allCustomers} visits={allVisitsData} managers={salesManagers}/></Suspense>
+                <Suspense fallback={null}><CustomerIntelligence customers={allCustomers} visits={allVisitsData} managers={salesManagers} tasks={allTasks}/></Suspense>
               </div>
             </div>
           )}

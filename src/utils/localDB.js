@@ -26,6 +26,8 @@ const INITIAL_DB = {
   journey_locations: [],   // NEW: GPS trail per journey
   daily_sales_reports: [],
   product_day: [],
+  tasks: [],
+  visit_notes: [],
   customers: [],
   brands: [
     { id:1, name:'Brand Alpha', created_at:'2026-01-01T00:00:00.000Z' },
@@ -41,6 +43,20 @@ const INITIAL_DB = {
   recentCustomers: [],
   recentProducts:  [],
   recentBrands:    [],
+}
+
+const normalizeText = (value = '') => String(value).trim().toLowerCase()
+
+function sortByDateAsc(items, field = 'created_at') {
+  return [...(items || [])].sort((a, b) => new Date(a?.[field] || 0) - new Date(b?.[field] || 0))
+}
+
+function buildVisitCustomerDetails(customer, visit) {
+  return [
+    customer?.owner_name || visit?.contact_person || '',
+    customer?.phone || visit?.contact_phone || '',
+    customer?.type || visit?.client_type || '',
+  ].filter(Boolean).join(' • ')
 }
 
 // ── In-memory cache: read localStorage ONCE, mutate in RAM, flush on writes ──
@@ -61,6 +77,8 @@ export function getDB() {
     if (!Array.isArray(db.journey_locations))   db.journey_locations   = []
     if (!Array.isArray(db.daily_sales_reports)) db.daily_sales_reports = []
     if (!Array.isArray(db.product_day))         db.product_day         = []
+    if (!Array.isArray(db.tasks))               db.tasks               = []
+    if (!Array.isArray(db.visit_notes))         db.visit_notes         = []
     if (!Array.isArray(db.customers))           db.customers           = INITIAL_DB.customers
     if (!Array.isArray(db.brands))              db.brands              = INITIAL_DB.brands
     if (!Array.isArray(db.products))            db.products            = []
@@ -238,8 +256,7 @@ export function getCurrentStatus(manager_id) {
 export function getTodayVisits(manager_id) {
   const db = getDB()
   const today = new Date().toISOString().split('T')[0]
-  return db.visits.filter(v=>v.manager_id===manager_id && v.visit_date===today)
-    .sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))
+  return sortByDateAsc(db.visits.filter(v=>v.manager_id===manager_id && v.visit_date===today))
 }
 export function getAllVisits(manager_id) {
   const db = getDB()
@@ -254,11 +271,40 @@ export function createVisit(data) {
   const db = getDB()
   const newVisit = { id:nextId(db.visits), ...data, status:data.status||'Completed', created_at:new Date().toISOString() }
   db.visits.push(newVisit)
+  const linkedCustomer = data.customer_id ? db.customers.find(c => c.id===data.customer_id) : null
   if (data.customer_id) {
     const cIdx = db.customers.findIndex(c=>c.id===data.customer_id)
     if (cIdx!==-1) { db.customers[cIdx].visit_count=(db.customers[cIdx].visit_count||0)+1; db.customers[cIdx].last_visited=new Date().toISOString() }
   }
-  if (data.customer_name) pushRecent(db, 'recentCustomers', { name:data.customer_name, type:data.client_type, id:data.customer_id })
+  if (data.customer_name) {
+    pushRecent(db, 'recentCustomers', {
+      name:data.customer_name,
+      type:data.client_type,
+      id:data.customer_id,
+      owner_name: linkedCustomer?.owner_name || data.contact_person || '',
+      phone: linkedCustomer?.phone || data.contact_phone || '',
+      address: linkedCustomer?.address || data.location || '',
+    })
+  }
+  if ((data.notes || '').trim()) {
+    if (!db.visit_notes) db.visit_notes = []
+    db.visit_notes.push({
+      id: nextId(db.visit_notes),
+      visit_id: newVisit.id,
+      customer_id: data.customer_id || null,
+      manager_id: data.manager_id,
+      note_type: 'visit_outcome',
+      note_text: data.notes.trim(),
+      language_code: 'en',
+      created_by: data.manager_id || null,
+      source: data.source || 'app',
+      synced_at: null,
+      archived_at: null,
+      deleted_at: null,
+      created_at: newVisit.created_at,
+      updated_at: null,
+    })
+  }
   saveDB(db); return newVisit
 }
 export function updateVisit(id, updates) {
@@ -267,6 +313,125 @@ export function updateVisit(id, updates) {
   if (idx===-1) throw new Error('Visit not found')
   db.visits[idx] = {...db.visits[idx], ...updates, updated_at:new Date().toISOString()}
   saveDB(db); return db.visits[idx]
+}
+
+// -------------------------------------------
+// TASKS & FOLLOW-UPS
+// -------------------------------------------
+export function getTasks(manager_id = null, filters = {}) {
+  const db = getDB()
+  let tasks = [...(db.tasks || [])].filter(task => !task.deleted_at)
+  if (manager_id != null) tasks = tasks.filter(task => task.manager_id === manager_id)
+  if (filters.customer_id != null) tasks = tasks.filter(task => task.customer_id === filters.customer_id)
+  if (filters.status) tasks = tasks.filter(task => task.status === filters.status)
+  return tasks.sort((a, b) => {
+    const aDue = a?.due_at ? new Date(a.due_at).getTime() : Number.MAX_SAFE_INTEGER
+    const bDue = b?.due_at ? new Date(b.due_at).getTime() : Number.MAX_SAFE_INTEGER
+    return aDue - bDue || new Date(b?.created_at || 0) - new Date(a?.created_at || 0)
+  })
+}
+
+export function createTask(data) {
+  const db = getDB()
+  if (!db.tasks) db.tasks = []
+  const timestamp = new Date().toISOString()
+  const task = {
+    id: nextId(db.tasks),
+    manager_id: data.manager_id || null,
+    customer_id: data.customer_id || null,
+    visit_id: data.visit_id || null,
+    title: (data.title || '').trim(),
+    description: data.description || '',
+    status: data.status || 'open',
+    priority: data.priority || 'medium',
+    due_at: data.due_at || null,
+    completed_at: data.completed_at || null,
+    reminder_at: data.reminder_at || null,
+    reminder_type: data.reminder_type || 'push',
+    assigned_by: data.assigned_by ?? data.manager_id ?? null,
+    created_by: data.created_by ?? data.manager_id ?? null,
+    updated_by: data.updated_by || null,
+    source: data.source || 'app',
+    synced_at: null,
+    archived_at: null,
+    deleted_at: null,
+    created_at: timestamp,
+    updated_at: null,
+  }
+  db.tasks.push(task)
+  saveDB(db)
+  return task
+}
+
+export function updateTask(id, updates) {
+  const db = getDB()
+  const idx = (db.tasks || []).findIndex(task => task.id === id)
+  if (idx === -1) throw new Error('Task not found')
+  const nextStatus = updates.status || db.tasks[idx].status
+  db.tasks[idx] = {
+    ...db.tasks[idx],
+    ...updates,
+    completed_at: nextStatus === 'completed'
+      ? (updates.completed_at || db.tasks[idx].completed_at || new Date().toISOString())
+      : null,
+    updated_at: new Date().toISOString(),
+  }
+  saveDB(db)
+  return db.tasks[idx]
+}
+
+export function deleteTask(id) {
+  return updateTask(id, { deleted_at: new Date().toISOString() })
+}
+
+export function getCustomerTimeline(customer_id, limit = 12) {
+  const db = getDB()
+  const customer = (db.customers || []).find(entry => entry.id === customer_id) || null
+  const visitEvents = (db.visits || [])
+    .filter(visit => visit.customer_id === customer_id)
+    .map(visit => ({
+      id: `visit-${visit.id}`,
+      type: 'visit',
+      timestamp: visit.created_at || `${visit.visit_date || ''}T00:00:00.000Z`,
+      title: visit.visit_type || 'Visit logged',
+      subtitle: visit.location || customer?.address || '',
+      detail: visit.notes || '',
+      status: visit.status || 'Completed',
+      meta: [visit.contact_person, visit.contact_phone].filter(Boolean).join(' • '),
+      raw: visit,
+    }))
+
+  const taskEvents = (db.tasks || [])
+    .filter(task => task.customer_id === customer_id && !task.deleted_at)
+    .map(task => ({
+      id: `task-${task.id}`,
+      type: 'task',
+      timestamp: task.completed_at || task.due_at || task.created_at,
+      title: task.title,
+      subtitle: task.status === 'completed' ? 'Follow-up completed' : 'Follow-up task',
+      detail: task.description || '',
+      status: task.status || 'open',
+      meta: task.due_at ? `Due ${new Date(task.due_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}` : '',
+      raw: task,
+    }))
+
+  const noteEvents = (db.visit_notes || [])
+    .filter(note => note.customer_id === customer_id && !note.deleted_at)
+    .map(note => ({
+      id: `note-${note.id}`,
+      type: 'note',
+      timestamp: note.created_at,
+      title: note.note_type === 'visit_outcome' ? 'Visit outcome saved' : 'Customer note',
+      subtitle: note.note_type?.replace(/_/g, ' ') || 'general',
+      detail: note.note_text || '',
+      status: 'logged',
+      meta: '',
+      raw: note,
+    }))
+
+  return [...visitEvents, ...taskEvents, ...noteEvents]
+    .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))
+    .slice(0, limit)
 }
 
 // -------------------------------------------
@@ -470,17 +635,40 @@ export function deleteProductDayEntry(id) {
 export function getCustomers(territory=null) {
   let c = getDB().customers||[]
   if (territory) c = c.filter(x=>x.territory===territory)
-  return c
+  return [...c].sort((a,b) => (a?.name || '').localeCompare(b?.name || ''))
 }
 export function searchCustomers(query) {
   if (!query||query.length<1) return []
-  const q=query.toLowerCase()
-  return (getDB().customers||[]).filter(c=>c.name.toLowerCase().includes(q)||c.type?.toLowerCase().includes(q)||c.owner_name?.toLowerCase().includes(q)).slice(0,8)
+  const q=normalizeText(query)
+  const score = (customer) => {
+    const name = normalizeText(customer?.name)
+    const owner = normalizeText(customer?.owner_name)
+    const phone = normalizeText(customer?.phone)
+    const type = normalizeText(customer?.type)
+    const address = normalizeText(customer?.address)
+    if (name.startsWith(q)) return 0
+    if (owner.startsWith(q)) return 1
+    if (phone.startsWith(q)) return 2
+    if (type.startsWith(q)) return 3
+    if (address.includes(q)) return 4
+    return 5
+  }
+
+  return (getDB().customers||[])
+    .filter(c =>
+      normalizeText(c?.name).includes(q) ||
+      normalizeText(c?.type).includes(q) ||
+      normalizeText(c?.owner_name).includes(q) ||
+      normalizeText(c?.phone).includes(q) ||
+      normalizeText(c?.address).includes(q)
+    )
+    .sort((a,b) => score(a) - score(b) || (a?.name || '').localeCompare(b?.name || ''))
+    .slice(0,8)
 }
 export function createCustomer(data) {
   const db=getDB()
   if(!db.customers) db.customers=[]
-  const existing=db.customers.find(c=>c.name.toLowerCase()===data.name.toLowerCase())
+  const existing=db.customers.find(c=>normalizeText(c.name)===normalizeText(data.name))
   if(existing) throw new Error('Customer already exists')
   const c={
     id:nextId(db.customers),
@@ -498,7 +686,7 @@ export function createCustomer(data) {
     created_at:new Date().toISOString()
   }
   db.customers.push(c)
-  pushRecent(db,'recentCustomers',{name:c.name,type:c.type,id:c.id})
+  pushRecent(db,'recentCustomers',{name:c.name,type:c.type,id:c.id,owner_name:c.owner_name,phone:c.phone,address:c.address})
   saveDB(db); return c
 }
 export function updateCustomer(id, updates) {
@@ -562,22 +750,49 @@ export function getRecentBrands()    { return getDB().recentBrands||[] }
 export function getLiveStatus() {
   const db=getDB()
   const today=new Date().toISOString().split('T')[0]
+  const customersById = new Map((db.customers || []).map(c => [c.id, c]))
+
   return db.users.filter(u=>u.role==='Sales Manager'&&u.is_active!==false).map(m=>{
     const statuses=db.statusHistory.filter(s=>s.manager_id===m.id)
     const curr=statuses.length>0?statuses[statuses.length-1]:null
-    const todayVisits=db.visits.filter(v=>v.manager_id===m.id&&v.visit_date===today)
+    const todayVisits=sortByDateAsc(db.visits.filter(v=>v.manager_id===m.id&&v.visit_date===today))
     const lastVisit=todayVisits[todayVisits.length-1]||null
     const activeJourney=db.journeys?.find(j=>j.manager_id===m.id&&j.status==='active')
     const tgts=db.targets.filter(t=>t.manager_id===m.id)
     const lt=tgts[tgts.length-1]
     const todayRpt=db.daily_sales_reports?.find(r=>r.manager_id===m.id&&r.date===today)
-    // Get last GPS location from journey_locations
     let lastGPS=null
     if (activeJourney) {
       const locs=(db.journey_locations||[]).filter(l=>l.journey_id===activeJourney.id).sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))
       if (locs.length>0) lastGPS={lat:locs[0].latitude,lng:locs[0].longitude,time:locs[0].timestamp,speed:locs[0].speed_kmh}
     }
-    return { id:m.id, name:m.full_name, username:m.username, territory:m.territory||'—', email:m.email, phone:m.phone, status:curr?.status||'In-Office', last_update:curr?.timestamp||null, visits_today:todayVisits.length, last_location:lastVisit?{name:lastVisit.location,lat:lastVisit.latitude,lng:lastVisit.longitude,time:lastVisit.created_at}:null, last_gps:lastGPS, active_journey:activeJourney?{id:activeJourney.id,started_at:activeJourney.start_time,visit_count:todayVisits.length,suspicious_flags:activeJourney.suspicious_flags||0}:null, target:lt, today_sales:todayRpt?.sales_achievement||0 }
+
+    const lastCustomer = lastVisit ? customersById.get(lastVisit.customer_id) : null
+
+    return {
+      id:m.id,
+      name:m.full_name,
+      username:m.username,
+      territory:m.territory||'—',
+      email:m.email,
+      phone:m.phone,
+      status:curr?.status||'In-Office',
+      last_update:curr?.timestamp||null,
+      visits_today:todayVisits.length,
+      last_location:lastVisit ? {
+        name:lastVisit.location,
+        lat:lastVisit.latitude,
+        lng:lastVisit.longitude,
+        time:lastVisit.created_at,
+        customer_name:lastVisit.client_name || lastVisit.customer_name || lastCustomer?.name || '',
+        customer_details: buildVisitCustomerDetails(lastCustomer, lastVisit),
+        visit_number: todayVisits.findIndex(v => v.id === lastVisit.id) + 1,
+      } : null,
+      last_gps:lastGPS,
+      active_journey:activeJourney?{id:activeJourney.id,started_at:activeJourney.start_time,visit_count:todayVisits.length,suspicious_flags:activeJourney.suspicious_flags||0}:null,
+      target:lt,
+      today_sales:todayRpt?.sales_achievement||0
+    }
   })
 }
 

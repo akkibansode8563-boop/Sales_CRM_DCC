@@ -7,6 +7,26 @@ import * as local from './localDB.js'
 
 const USE_CLOUD = isSupabaseConfigured()
 
+const normalizeText = (value = '') => String(value).trim().toLowerCase()
+
+function mergeCustomerMatches(primary = [], secondary = []) {
+  const seen = new Set()
+  return [...primary, ...secondary].filter((customer) => {
+    const key = customer?.id || normalizeText(customer?.name)
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function buildVisitCustomerDetails(customer, visit) {
+  return [
+    customer?.owner_name || visit?.contact_person || '',
+    customer?.phone || visit?.contact_phone || '',
+    customer?.type || visit?.client_type || '',
+  ].filter(Boolean).join(' • ')
+}
+
 // --- Re-export pure local functions unchanged -------------
 export {
   calcDistanceKm, calcTravelTime,
@@ -29,7 +49,8 @@ export {
   queueOfflineAction,
   getOfflineQueue,
   flushOfflineQueue,
- } from './localDB.js'
+  createTask as createOfflineTask,
+} from './localDB.js'
 
 // --- Hash helper (same as localDB) -----------------------
 async function hashPassword(password) {
@@ -47,6 +68,18 @@ async function fetchTable(tableName, queryBuilder = q => q) {
   return data || []
 }
 
+async function fetchOptionalTable(tableName, queryBuilder = q => q) {
+  try {
+    return await fetchTable(tableName, queryBuilder)
+  } catch (error) {
+    const message = String(error?.message || '')
+    if (message.includes(`relation "public.${tableName}" does not exist`) || message.includes(`Could not find the table 'public.${tableName}'`)) {
+      return []
+    }
+    throw error
+  }
+}
+
 export async function syncCloudToLocal() {
   if (!USE_CLOUD || !supabase) return { success: false, message: 'Supabase not configured' }
 
@@ -60,6 +93,8 @@ export async function syncCloudToLocal() {
     journeyLocations,
     dailySalesReports,
     productDay,
+    tasks,
+    visitNotes,
     customers,
     brands,
     products,
@@ -72,6 +107,8 @@ export async function syncCloudToLocal() {
     fetchTable('journey_locations'),
     fetchTable('daily_sales_reports'),
     fetchTable('product_day'),
+    fetchOptionalTable('tasks'),
+    fetchOptionalTable('visit_notes'),
     fetchTable('customers'),
     fetchTable('brands'),
     fetchTable('products'),
@@ -86,6 +123,8 @@ export async function syncCloudToLocal() {
     journey_locations: journeyLocations,
     daily_sales_reports: dailySalesReports,
     product_day: productDay,
+    tasks,
+    visit_notes: visitNotes,
     customers,
     brands,
     products,
@@ -320,7 +359,7 @@ export async function createVisit(data) {
     .eq('id', data.customer_id)
 }
     // Mirror to local for offline analytics
-    try { local.createVisit(data) } catch {}
+    try { local.createVisit({ ...data, created_at: newVisit?.created_at || new Date().toISOString() }) } catch {}
     return newVisit
   } catch { return local.createVisit(data) }
 }
@@ -332,6 +371,127 @@ export async function updateVisit(id, updates) {
     if (error) throw error
     return data
   } catch { return local.updateVisit(id, updates) }
+}
+
+// ---------------------------------------------------------
+// TASKS & FOLLOW-UPS
+// ---------------------------------------------------------
+export async function getTasks(manager_id = null, filters = {}) {
+  if (!USE_CLOUD) return local.getTasks(manager_id, filters)
+  try {
+    let q = supabase.from('tasks').select('*').is('deleted_at', null)
+    if (manager_id != null) q = q.eq('manager_id', manager_id)
+    if (filters.customer_id != null) q = q.eq('customer_id', filters.customer_id)
+    if (filters.status) q = q.eq('status', filters.status)
+    const { data, error } = await q.order('due_at', { ascending: true, nullsFirst: false }).order('created_at', { ascending: false })
+    if (error) throw error
+    return data || []
+  } catch {
+    return local.getTasks(manager_id, filters)
+  }
+}
+
+export async function createTask(data) {
+  if (!USE_CLOUD) return local.createTask(data)
+  try {
+    const payload = {
+      ...data,
+      status: data.status || 'open',
+      priority: data.priority || 'medium',
+      reminder_type: data.reminder_type || 'push',
+      source: data.source || 'app',
+    }
+    const { data: task, error } = await supabase.from('tasks').insert(payload).select().single()
+    if (error) throw error
+    try { createOfflineTask({ ...payload, id: task?.id, created_at: task?.created_at }) } catch {}
+    return task
+  } catch {
+    return local.createTask(data)
+  }
+}
+
+export async function updateTask(id, updates) {
+  if (!USE_CLOUD) return local.updateTask(id, updates)
+  try {
+    const nextStatus = updates.status
+    const payload = {
+      ...updates,
+      updated_at: new Date().toISOString(),
+    }
+    if (nextStatus === 'completed' && !payload.completed_at) {
+      payload.completed_at = new Date().toISOString()
+    }
+    if (nextStatus && nextStatus !== 'completed') {
+      payload.completed_at = null
+    }
+    const { data, error } = await supabase.from('tasks').update(payload).eq('id', id).select().single()
+    if (error) throw error
+    try { local.updateTask(id, payload) } catch {}
+    return data
+  } catch {
+    return local.updateTask(id, updates)
+  }
+}
+
+export async function deleteTask(id) {
+  return updateTask(id, { deleted_at: new Date().toISOString() })
+}
+
+export async function getCustomerTimeline(customer_id, limit = 12) {
+  if (!USE_CLOUD) return local.getCustomerTimeline(customer_id, limit)
+  try {
+    const [visitsResult, tasksResult, notesResult] = await Promise.all([
+      supabase.from('visits').select('*').eq('customer_id', customer_id).is('deleted_at', null).order('created_at', { ascending: false }).limit(limit),
+      supabase.from('tasks').select('*').eq('customer_id', customer_id).is('deleted_at', null).order('created_at', { ascending: false }).limit(limit),
+      supabase.from('visit_notes').select('*').eq('customer_id', customer_id).is('deleted_at', null).order('created_at', { ascending: false }).limit(limit),
+    ])
+
+    if (visitsResult.error) throw visitsResult.error
+    if (tasksResult.error) throw tasksResult.error
+    if (notesResult.error) throw notesResult.error
+
+    const timeline = [
+      ...((visitsResult.data || []).map((visit) => ({
+        id: `visit-${visit.id}`,
+        type: 'visit',
+        timestamp: visit.created_at || `${visit.visit_date || ''}T00:00:00.000Z`,
+        title: visit.visit_type || 'Visit logged',
+        subtitle: visit.location || '',
+        detail: visit.notes || '',
+        status: visit.status || 'Completed',
+        meta: [visit.contact_person, visit.contact_phone].filter(Boolean).join(' • '),
+        raw: visit,
+      }))),
+      ...((tasksResult.data || []).map((task) => ({
+        id: `task-${task.id}`,
+        type: 'task',
+        timestamp: task.completed_at || task.due_at || task.created_at,
+        title: task.title,
+        subtitle: task.status === 'completed' ? 'Follow-up completed' : 'Follow-up task',
+        detail: task.description || '',
+        status: task.status || 'open',
+        meta: task.due_at ? `Due ${new Date(task.due_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}` : '',
+        raw: task,
+      }))),
+      ...((notesResult.data || []).map((note) => ({
+        id: `note-${note.id}`,
+        type: 'note',
+        timestamp: note.created_at,
+        title: note.note_type === 'visit_outcome' ? 'Visit outcome saved' : 'Customer note',
+        subtitle: note.note_type?.replace(/_/g, ' ') || 'general',
+        detail: note.note_text || '',
+        status: 'logged',
+        meta: '',
+        raw: note,
+      }))),
+    ]
+
+    return timeline
+      .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))
+      .slice(0, limit)
+  } catch {
+    return local.getCustomerTimeline(customer_id, limit)
+  }
 }
 
 // ---------------------------------------------------------
@@ -556,7 +716,7 @@ export async function getCustomers(territory = null) {
     let q = supabase.from('customers').select('*')
     if (territory) q = q.eq('territory', territory)
     const { data } = await q.order('name')
-    return data || []
+    return mergeCustomerMatches(data || [], local.getCustomers(territory))
   } catch { return local.getCustomers(territory) }
 }
 
@@ -564,15 +724,16 @@ export async function searchCustomers(query) {
   if (!USE_CLOUD) return local.searchCustomers(query)
   try {
     if (!query || query.length < 1) return []
-    const { data } = await supabase.from('customers').select('*').or(`name.ilike.%${query}%,type.ilike.%${query}%,owner_name.ilike.%${query}%`).limit(8)
-    return data || []
+    const localMatches = local.searchCustomers(query)
+    const { data } = await supabase.from('customers').select('*').or(`name.ilike.%${query}%,type.ilike.%${query}%,owner_name.ilike.%${query}%,phone.ilike.%${query}%,address.ilike.%${query}%`).order('name').limit(8)
+    return mergeCustomerMatches(localMatches, data || []).slice(0,8)
   } catch { return local.searchCustomers(query) }
 }
 
 export async function createCustomer(data) {
   if (!USE_CLOUD) return local.createCustomer(data)
   try {
-    const { data: existing } = await supabase.from('customers').select('id').ilike('name', data.name.trim()).single()
+    const { data: existing } = await supabase.from('customers').select('id').ilike('name', data.name.trim()).maybeSingle()
     if (existing) throw new Error('Customer already exists')
     const { data: customer, error } = await supabase.from('customers').insert({
       name: data.name.trim(),
@@ -736,7 +897,9 @@ export function subscribeToLiveUpdates(onUpdate) {
   if (!USE_CLOUD || !supabase) return () => {}
   const channel = supabase.channel('live-updates')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'visits' }, onUpdate)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, onUpdate)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'journeys' }, onUpdate)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'journey_locations' }, onUpdate)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'status_history' }, onUpdate)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_sales_reports' }, onUpdate)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'product_day' }, onUpdate)
@@ -825,6 +988,8 @@ export function getLiveStatusSync()               { return local.getLiveStatus()
 export function getUsersAdminSync()               { return local.getUsersAdmin() }
 export function getAllVisitsAllSync()              { return local.getAllVisitsAll() }
 export function getCustomersSync(territory)       { return local.getCustomers(territory) }
+export function getTasksSync(manager_id, filters) { return local.getTasks(manager_id, filters) }
+export function getCustomerTimelineSync(customer_id, limit) { return local.getCustomerTimeline(customer_id, limit) }
 export function getActiveJourneySync(manager_id)  { return local.getActiveJourney(manager_id) }
 export function getTargetsSyncById(manager_id)    { return local.getTargets(manager_id) }
 export function getTodayVisitsSync(manager_id)    { return local.getTodayVisits(manager_id) }
