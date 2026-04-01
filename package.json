@@ -6,9 +6,17 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cap:sync": "npx cap sync",
+    "cap:add:android": "npx cap add android",
+    "cap:open:android": "npx cap open android",
+    "cap:sync:android": "npx cap sync android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.0",
+    "@capacitor/cli": "^8.3.0",
+    "@capacitor/core": "^8.3.0",
+    "@capacitor/splash-screen": "^8.0.1",
     "@supabase/supabase-js": "^2.99.2",
     "axios": "^1.6.7",
     "date-fns": "^4.1.0",
@@ -20,16 +28,14 @@
     "react-leaflet": "^4.2.1",
     "react-router-dom": "^6.22.0",
     "recharts": "^3.8.0",
-    "xlsx": "^0.18.5",
     "zustand": "^4.5.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
-    "idb": "^8.0.3",
     "terser": "^5.46.1",
-    "vite": "^5.4.10",
-    "vite-plugin-pwa": "^1.2.0"
+    "typescript": "^6.0.2",
+    "vite": "^5.4.10"
   }
 }

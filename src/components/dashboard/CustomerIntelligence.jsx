@@ -5,32 +5,28 @@ const fmt = v => v ? '₹' + Number(v).toLocaleString('en-IN') : '₹0'
 const daysSince = iso => iso ? Math.floor((Date.now() - new Date(iso)) / 86400000) : null
 
 export default memo(function CustomerIntelligence({ customers = [], visits = [], managers = [] }) {
-  // Guard: ensure all props are arrays to prevent map/filter crashes
-  const safeCustomers = Array.isArray(customers) ? customers : []
-  const safeVisits    = Array.isArray(visits)    ? visits    : []
-  const safeMgrs      = Array.isArray(managers)  ? managers  : []
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState('last_visit')
 
   const enriched = useMemo(() => {
-    return safeCustomers.map(c => {
-      const cVisits = safeVisits.filter(v => v.customer_id === c.id)
+    return customers.map(c => {
+      const cVisits = visits.filter(v => v.customer_id === c.id)
       const lastVisit = cVisits.sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0]
       const totalSales = cVisits.reduce((s,v) => s + (v.sale_amount || 0), 0)
-      const assignedMgr = safeMgrs.find(m => m.id === c.assigned_manager_id)
+      const assignedMgr = managers.find(m => m.id === c.assigned_manager_id)
       const days = daysSince(lastVisit?.created_at)
       const frequency = cVisits.length > 0 ? (cVisits.length / Math.max(1, daysSince(c.created_at) || 30) * 30).toFixed(1) : 0
       const priority = !lastVisit ? 'high' : days > 21 ? 'high' : days > 14 ? 'medium' : 'low'
 
       return { ...c, cVisits, lastVisit, totalSales, assignedMgr, days, frequency, priority }
     })
-  }, [safeCustomers, safeVisits, safeMgrs])
+  }, [customers, visits, managers])
 
   const filtered = useMemo(() => {
     let list = enriched
     if (search) {
       const q = search.toLowerCase()
-      list = list.filter(c => (c.name||'').toLowerCase().includes(q) || (c.type||'').toLowerCase().includes(q) || (c.territory||'').toLowerCase().includes(q))
+      list = list.filter(c => c.name?.toLowerCase().includes(q) || c.type?.toLowerCase().includes(q) || c.territory?.toLowerCase().includes(q))
     }
     return [...list].sort((a,b) => {
       if (sortBy === 'last_visit') return (b.lastVisit ? new Date(b.lastVisit.created_at) : 0) - (a.lastVisit ? new Date(a.lastVisit.created_at) : 0)

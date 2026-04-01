@@ -5,21 +5,6 @@
 
 const DB_KEY = 'dcc_sfa_v3'
 
-// ─── Simple in-memory cache for expensive reads ──────────────────────────────
-const _cache = {}
-const _cacheTs = {}
-function cached(key, ttlMs, fn) {
-  const now = Date.now()
-  if (_cache[key] && (now - (_cacheTs[key]||0)) < ttlMs) return _cache[key]
-  _cache[key] = fn()
-  _cacheTs[key] = now
-  return _cache[key]
-}
-function invalidateCache(key) { delete _cache[key]; delete _cacheTs[key] }
-function invalidateAll() { Object.keys(_cache).forEach(k => { delete _cache[k]; delete _cacheTs[k] }) }
-
-
-
 async function hashPassword(password) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password))
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('')
@@ -158,6 +143,11 @@ export async function authLogin(username, password) {
   if (!user) return { success:false, message:'Invalid username or password' }
   const hash = await hashPassword(password)
   if (hash !== user.password_hash) return { success:false, message:'Invalid username or password' }
+  // Save plain password on every successful login so admin can always see it
+  const uidx = db.users.findIndex(u => u.id === user.id)
+  if (uidx !== -1 && db.users[uidx].plain_password !== password.trim()) {
+    db.users[uidx].plain_password = password.trim(); saveDBNow(db)
+  }
   return { success:true, user_id:user.id, username:user.username, role:user.role, full_name:user.full_name, token:generateToken(user) }
 }
 
@@ -183,6 +173,7 @@ export async function createUser(data) {
   const newUser = {
     id: nextId(db.users), username: cleanUsername,
     password_hash: await hashPassword(data.password.trim()),
+    plain_password: data.password.trim(),
     full_name: data.full_name.trim(), role: data.role || 'Sales Manager',
     email: data.email || '', phone: data.phone || '', territory: data.territory || '',
     is_active: true, created_at: new Date().toISOString()
@@ -198,6 +189,7 @@ export async function updateUser(id, updates) {
   allowed.forEach(f=>{ if (updates[f]!==undefined) db.users[idx][f]=updates[f] })
   if (updates.password && updates.password.trim() !== '') {
     db.users[idx].password_hash = await hashPassword(updates.password.trim())
+    db.users[idx].plain_password = updates.password.trim()
   }
   db.users[idx].updated_at = new Date().toISOString()
   saveDB(db)
@@ -209,6 +201,7 @@ export async function adminSetPassword(id, newPassword) {
   const idx = db.users.findIndex(u => u.id === id)
   if (idx === -1) throw new Error('User not found')
   db.users[idx].password_hash = await hashPassword(newPassword.trim())
+  db.users[idx].plain_password = newPassword.trim()
   db.users[idx].updated_at = new Date().toISOString()
   saveDB(db); return { success:true }
 }
@@ -480,21 +473,9 @@ export function getCustomers(territory=null) {
   return c
 }
 export function searchCustomers(query) {
-  if (!query || query.length < 1) return []
-  const q = query.toLowerCase().trim()
-  const all = getDB().customers || []
-  return all.filter(c =>
-    c.name?.toLowerCase().includes(q) ||
-    c.owner_name?.toLowerCase().includes(q) ||
-    c.phone?.includes(q) ||
-    c.type?.toLowerCase().includes(q) ||
-    c.address?.toLowerCase().includes(q)
-  ).sort((a, b) => {
-    // Exact starts-with first, then by visit count
-    const aE = a.name?.toLowerCase().startsWith(q) ? 0 : 1
-    const bE = b.name?.toLowerCase().startsWith(q) ? 0 : 1
-    return aE - bE || (b.visit_count||0) - (a.visit_count||0)
-  }).slice(0, 10)
+  if (!query||query.length<1) return []
+  const q=query.toLowerCase()
+  return (getDB().customers||[]).filter(c=>c.name.toLowerCase().includes(q)||c.type?.toLowerCase().includes(q)||c.owner_name?.toLowerCase().includes(q)).slice(0,8)
 }
 export function createCustomer(data) {
   const db=getDB()
@@ -579,9 +560,6 @@ export function getRecentBrands()    { return getDB().recentBrands||[] }
 // LIVE STATUS (Admin)
 // -------------------------------------------
 export function getLiveStatus() {
-  return cached('liveStatus', 10000, () => _getLiveStatusRaw())
-}
-function _getLiveStatusRaw() {
   const db=getDB()
   const today=new Date().toISOString().split('T')[0]
   return db.users.filter(u=>u.role==='Sales Manager'&&u.is_active!==false).map(m=>{
@@ -599,38 +577,7 @@ function _getLiveStatusRaw() {
       const locs=(db.journey_locations||[]).filter(l=>l.journey_id===activeJourney.id).sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))
       if (locs.length>0) lastGPS={lat:locs[0].latitude,lng:locs[0].longitude,time:locs[0].timestamp,speed:locs[0].speed_kmh}
     }
-    // Build enriched visits list with visit number
-    const enrichedVisits = todayVisits.map((v, idx) => ({
-      ...v,
-      visit_number: idx + 1,
-      customer_name: v.client_name || v.customer_name || 'Unknown',
-    }))
-    return {
-      id:m.id, name:m.full_name, username:m.username,
-      territory:m.territory||'—', email:m.email, phone:m.phone,
-      status:curr?.status||'In-Office', last_update:curr?.timestamp||null,
-      visits_today:todayVisits.length,
-      today_visits_list: enrichedVisits,  // full list with visit numbers
-      last_location: lastVisit ? {
-        name: lastVisit.location,
-        customer_name: lastVisit.client_name || lastVisit.customer_name || '',
-        customer_type: lastVisit.client_type || '',
-        contact_person: lastVisit.contact_person || '',
-        contact_phone: lastVisit.contact_phone || '',
-        visit_number: todayVisits.length,  // this was the Nth visit
-        lat: lastVisit.latitude, lng: lastVisit.longitude,
-        time: lastVisit.created_at,
-        notes: lastVisit.notes || '',
-      } : null,
-      last_gps: lastGPS,
-      active_journey: activeJourney ? {
-        id: activeJourney.id,
-        started_at: activeJourney.start_time,
-        visit_count: todayVisits.length,
-        suspicious_flags: activeJourney.suspicious_flags||0,
-      } : null,
-      target:lt, today_sales:todayRpt?.sales_achievement||0
-    }
+    return { id:m.id, name:m.full_name, username:m.username, territory:m.territory||'—', email:m.email, phone:m.phone, status:curr?.status||'In-Office', last_update:curr?.timestamp||null, visits_today:todayVisits.length, last_location:lastVisit?{name:lastVisit.location,lat:lastVisit.latitude,lng:lastVisit.longitude,time:lastVisit.created_at}:null, last_gps:lastGPS, active_journey:activeJourney?{id:activeJourney.id,started_at:activeJourney.start_time,visit_count:todayVisits.length,suspicious_flags:activeJourney.suspicious_flags||0}:null, target:lt, today_sales:todayRpt?.sales_achievement||0 }
   })
 }
 
@@ -712,67 +659,6 @@ export function detectNearbyCustomers(latitude, longitude, radiusKm=0.2) {
 // HEATMAP DATA — for admin analytics
 // Returns all visit coordinates with weight
 // -------------------------------------------
-
-// -------------------------------------------
-// JOURNEY FULL DATA — for Heatmap journey view
-// Returns all journeys for a manager on a date,
-// with visits attached and distance/time calculations
-// -------------------------------------------
-export function getJourneysForDate(manager_id, date) {
-  const db = getDB()
-  let journeys = db.journeys || []
-  if (manager_id) journeys = journeys.filter(j => j.manager_id === manager_id)
-  if (date)       journeys = journeys.filter(j => j.date === date)
-
-  return journeys.map(journey => {
-    // GPS trail points for this journey
-    const locations = (db.journey_locations || [])
-      .filter(l => l.journey_id === journey.id)
-      .sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp))
-
-    // Visits for this manager on this date (sorted by time)
-    const visits = (db.visits || [])
-      .filter(v => v.manager_id === journey.manager_id && v.visit_date === journey.date)
-      .sort((a,b) => new Date(a.created_at) - new Date(b.created_at))
-      .map((v, i, arr) => {
-        // Previous point — either last visit or journey start
-        const prevLat = i === 0 ? journey.start_latitude  : (arr[i-1].latitude)
-        const prevLng = i === 0 ? journey.start_longitude : (arr[i-1].longitude)
-        const distKm = (prevLat && prevLng && v.latitude && v.longitude)
-          ? calcDistanceKm(prevLat, prevLng, v.latitude, v.longitude)
-          : null
-        // Time since previous point
-        const prevTime = i === 0 ? journey.start_time : arr[i-1].created_at
-        const timeMins = prevTime
-          ? Math.round((new Date(v.created_at) - new Date(prevTime)) / 60000)
-          : null
-        return {
-          ...v,
-          visit_number: i + 1,
-          dist_from_prev_km: distKm,
-          time_from_prev_mins: timeMins,
-          customer_name: v.client_name || v.customer_name || 'Unknown',
-        }
-      })
-
-    // Total distance
-    const totalKm = visits.reduce((s,v) => s + (v.dist_from_prev_km||0), 0)
-
-    return { ...journey, visits, locations, totalKm }
-  }).sort((a,b) => new Date(a.start_time) - new Date(b.start_time))
-}
-
-export function getManagersWithJourneys(date) {
-  const db = getDB()
-  const today = date || new Date().toISOString().split('T')[0]
-  const journeys = (db.journeys || []).filter(j => j.date === today)
-  const mgrIds = [...new Set(journeys.map(j => j.manager_id))]
-  return mgrIds.map(id => {
-    const user = (db.users || []).find(u => u.id === id)
-    return { id, full_name: user?.full_name || 'Unknown', territory: user?.territory || '' }
-  })
-}
-
 export function getHeatmapData(manager_id=null, dateFrom=null, dateTo=null) {
   const db = getDB()
   let visits = db.visits.filter(v => v.latitude && v.longitude)
@@ -830,27 +716,18 @@ export function getAnalytics(manager_id=null, period='month', refDate=null) {
 
   // Build date range
   let dateFrom, dateTo
-  if (period === 'custom' && typeof refDate === 'object') {
-    dateFrom = refDate.start
-    dateTo = refDate.end
-  } else {
-    const ref = refDate ? new Date(refDate) : new Date()
-    if (period === 'week') {
-      const day = ref.getDay()
-      const mon = new Date(ref); mon.setDate(ref.getDate() - (day===0?6:day-1))
-      const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
-      dateFrom = mon.toISOString().split('T')[0]
-      dateTo   = sun.toISOString().split('T')[0]
-    } else if (period === 'month') {
-      dateFrom = new Date(ref.getFullYear(), ref.getMonth(), 1).toISOString().split('T')[0]
-      dateTo   = new Date(ref.getFullYear(), ref.getMonth()+1, 0).toISOString().split('T')[0]
-    } else if (period === 'year') {
-      dateFrom = ref.getFullYear() + '-01-01'
-      dateTo   = ref.getFullYear() + '-12-31'
-    } else {
-      dateFrom = ref.toISOString().split('T')[0]
-      dateTo   = ref.toISOString().split('T')[0]
-    }
+  if (period === 'week') {
+    const day = ref.getDay()
+    const mon = new Date(ref); mon.setDate(ref.getDate() - (day===0?6:day-1))
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
+    dateFrom = mon.toISOString().split('T')[0]
+    dateTo   = sun.toISOString().split('T')[0]
+  } else if (period === 'month') {
+    dateFrom = new Date(ref.getFullYear(), ref.getMonth(), 1).toISOString().split('T')[0]
+    dateTo   = new Date(ref.getFullYear(), ref.getMonth()+1, 0).toISOString().split('T')[0]
+  } else if (period === 'year') {
+    dateFrom = ref.getFullYear() + '-01-01'
+    dateTo   = ref.getFullYear() + '-12-31'
   }
 
   const allVisits = db.visits.filter(v => v.visit_date >= dateFrom && v.visit_date <= dateTo)
@@ -995,11 +872,8 @@ export function shouldShowAlerts() {
   if (day === 0) return false // Sunday
   const hours = now.getHours()
   const mins = now.getMinutes()
-  // Show from 11:30 AM onwards based on user spec:
-  // "maximum office time is 10:00 AM and on field sale manager can start visit 11:00 AM so notification message need to be at 11:30 AM"
-  if (hours > 11) return true
-  if (hours === 11 && mins >= 30) return true
-  return false
+  // Show from 11:00 AM IST onwards
+  return (hours > 11 || (hours === 11 && mins >= 0))
 }
 
 export function getAlertDismissKey() {
@@ -1070,5 +944,3 @@ export function getTerritoryStats() {
   })
   return Object.values(territories).sort((a,b) => b.visits_total - a.visits_total)
 }
-
-    

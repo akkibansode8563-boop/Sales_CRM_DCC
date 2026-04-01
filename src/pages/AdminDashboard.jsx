@@ -1,8 +1,6 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import useAuthStore from '../store/authStore'
 import dccLogo from '../assets/dcc-logo.png'
-import SyncModeBanner    from '../components/SyncModeBanner'
-import CloudSetupGuide  from '../components/CloudSetupGuide'
 import dccLogoWhite from '../assets/dcc-logo-white.png'
 import {
     getUsers, createUser, updateUser, deleteUser, adminSetPassword,
@@ -20,9 +18,7 @@ import {
     getTargetsSync         as getTargets,
     getJourneyHistorySync  as getJourneyHistory,
     getAllVisitsAllSync,
-    getCustomersSync,
-    refreshSync,
-    getAuditLogs,
+    getCustomersSync
   } from '../utils/supabaseDB'
 import { lazy, Suspense } from 'react'
 import { getStorageMode, isSupabaseConfigured } from '../utils/supabaseClient'
@@ -42,7 +38,6 @@ import { DailySalesTrendChart, VisitBarChart, ProductBarChart, MonthlyComparison
 const Leaderboard          = lazy(() => import('../components/dashboard/Leaderboard'))
 const AIInsights           = lazy(() => import('../components/dashboard/AIInsights'))
 const CustomerIntelligence = lazy(() => import('../components/dashboard/CustomerIntelligence'))
-const CustomerDatabase     = lazy(() => import('../components/dashboard/CustomerDatabase'))
 const ProductPerformance   = lazy(() => import('../components/dashboard/ProductPerformance'))
 const ProductDayAdmin      = lazy(() => import('../components/dashboard/ProductDayAdmin'))
 // merged into main supabaseDB import above
@@ -76,7 +71,6 @@ const NAV = [
   { id:'customers', lbl:'Customers', ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> },
   { id:'products',  lbl:'Products',  ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> },
   { id:'users',     lbl:'Users',     ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg> },
-  { id:'audit',     lbl:'Audit Logs',ico: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg> },
 ]
 
 export default function AdminDashboard() {
@@ -97,10 +91,8 @@ export default function AdminDashboard() {
   const [drillDate,       setDrillDate]     = useState(new Date().toISOString().split('T')[0])
   const [filterDate,      setFilterDate]    = useState(new Date().toISOString().split('T')[0])
   const [sidebarOpen,     setSidebarOpen]   = useState(false)
-  const [showSetupGuide,  setShowSetupGuide] = useState(false)
   const [analyticsPeriod, setAnalyticsPeriod] = useState('month')
   const [analyticsDate,   setAnalyticsDate]   = useState(new Date().toISOString().split('T')[0])
-  const [analyticsEndDate,setAnalyticsEndDate]= useState(new Date().toISOString().split('T')[0])
   const [analyticsData,   setAnalyticsData]   = useState(null)
   const [analyticsMgrId,  setAnalyticsMgrId]  = useState(null)
   const [alerts,          setAlerts]          = useState([])
@@ -111,10 +103,8 @@ export default function AdminDashboard() {
   const [overviewChartType, setOverviewChartType] = useState('sales')
   const [allCustomers,    setAllCustomers]    = useState([])
   const [allVisitsData,   setAllVisitsData]   = useState([])
-  const [auditLogsData,   setAuditLogsData]   = useState([])
   const [offlineCount,    setOfflineCount]    = useState(0)
   const [syncStatus,      setSyncStatus]      = useState('idle')
-  const [isSyncing,       setIsSyncing]       = useState(false)
   const [lastSyncAt,      setLastSyncAt]      = useState(() => getLastSyncAt())
   const [manualSyncing,   setManualSyncing]   = useState(false)
 
@@ -127,26 +117,17 @@ export default function AdminDashboard() {
   const toastMsg = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3200) }
   const syncLabel = lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' }) : 'Not yet'
 
-  // Debounce timer — prevents reload storms from multiple realtime events firing at once
-  const _reloadTimer = useRef(null)
-
   const reload = useCallback(() => {
-    // Debounce: if multiple realtime events fire within 600ms, only run once
-    if (_reloadTimer.current) clearTimeout(_reloadTimer.current)
-    _reloadTimer.current = setTimeout(() => {
-      _reloadTimer.current = null
-      try { const m = getLiveStatus();   setManagers(Array.isArray(m) ? m : []) }     catch(e) { console.error('getLiveStatus',e);   setManagers([]) }
-      try { const u = getUsersAdmin();   setUsers(Array.isArray(u) ? u : []) }         catch(e) { console.error('getUsersAdmin',e);   setUsers([]) }
-      try { const t = getTerritoryStats(); setTerrStats(Array.isArray(t) ? t : []) }   catch(e) { console.error('getTerritoryStats',e); setTerrStats([]) }
-      try { const c = getCustomersSync(); setAllCustomers(Array.isArray(c) ? c : []) } catch(e) { console.error('getCustomers',e);     setAllCustomers([]) }
-      try { const v = getAllVisitsAllSync(); setAllVisitsData(Array.isArray(v) ? v : []) } catch(e) { console.error('getAllVisitsAll',e); setAllVisitsData([]) }
-      try { setOfflineCount(getQueueCount() || 0) } catch(e) { setOfflineCount(0) }
-    }, 600)
+    try { const m = getLiveStatus();   setManagers(Array.isArray(m) ? m : []) }     catch(e) { console.error('getLiveStatus',e);   setManagers([]) }
+    try { const u = getUsersAdmin();   setUsers(Array.isArray(u) ? u : []) }         catch(e) { console.error('getUsersAdmin',e);   setUsers([]) }
+    try { const t = getTerritoryStats(); setTerrStats(Array.isArray(t) ? t : []) }   catch(e) { console.error('getTerritoryStats',e); setTerrStats([]) }
+    try { const c = getCustomersSync(); setAllCustomers(Array.isArray(c) ? c : []) } catch(e) { console.error('getCustomers',e);     setAllCustomers([]) }
+    try { const v = getAllVisitsAllSync(); setAllVisitsData(Array.isArray(v) ? v : []) } catch(e) { console.error('getAllVisitsAll',e); setAllVisitsData([]) }
+    try { setOfflineCount(getQueueCount() || 0) } catch(e) { setOfflineCount(0) }
   }, [])
 
   useEffect(() => {
-    // 5 minute auto-sync interval (was 30s — too aggressive for mobile field use)
-    startAutoSync(5 * 60 * 1000)
+    startAutoSync(30000)
     const unsub = onSyncStatusChange(s => {
       setSyncStatus(s.syncing ? 'syncing' : s.status || 'idle')
       setOfflineCount(s.count || 0)
@@ -168,36 +149,18 @@ export default function AdminDashboard() {
     }
   }
 
-  const loadAnalytics = useCallback((period, date, endDate, mgrId=null) => {
-    try { setAnalyticsData(getAnalytics(mgrId, period, period === 'custom' ? { start: date, end: endDate } : date) || null) }
+  const loadAnalytics = useCallback((period, date, mgrId=null) => {
+    try { setAnalyticsData(getAnalytics(mgrId, period, date) || null) }
     catch(e) { console.error('getAnalytics', e); setAnalyticsData(null) }
   }, [])
-  useEffect(() => { loadAnalytics(analyticsPeriod, analyticsDate, analyticsEndDate, analyticsMgrId) }, [analyticsPeriod, analyticsDate, analyticsEndDate, analyticsMgrId, loadAnalytics])
+  useEffect(() => { loadAnalytics(analyticsPeriod, analyticsDate, analyticsMgrId) }, [analyticsPeriod, analyticsDate, analyticsMgrId, loadAnalytics])
 
   useEffect(() => {
-    // Request system notification permission for Admin alerts
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission()
-    }
-
     const loadAlerts = () => {
       if (shouldShowAlerts()) {
         const dismissed = localStorage.getItem(getAlertDismissKey())
         setAlertsDismissed(!!dismissed)
-        const dailyAlerts = getDailyAlerts()
-        setAlerts(dailyAlerts)
-
-        // Trigger native notification if there are alerts and not yet sent today
-        if (dailyAlerts.length > 0 && !dismissed) {
-          const notifiedKey = 'dcc_push_notified_' + new Date().toISOString().split('T')[0]
-          if (!localStorage.getItem(notifiedKey) && 'Notification' in window && Notification.permission === 'granted') {
-            new Notification('Action Required: Missing Journeys', {
-              body: `${dailyAlerts.length} managers haven't started their journey by 11:30 AM.`,
-              icon: '/dcc-logo.png' 
-            })
-            localStorage.setItem(notifiedKey, 'true')
-          }
-        }
+        setAlerts(getDailyAlerts())
       } else { setAlerts([]) }
     }
     loadAlerts()
@@ -211,38 +174,23 @@ export default function AdminDashboard() {
     productionReset(); reload(); toastMsg('Production reset complete.')
   }
 
+  useEffect(() => { reload() }, [reload])
   useEffect(() => {
-    // Render instantly from local cache (shows stale data immediately)
-    reload()
-    // Background sync: fires after paint — never blocks the dashboard
-    setIsSyncing(true)
-    refreshSync()
-      .then(() => { reload(); setIsSyncing(false) })
-      .catch(() =>  setIsSyncing(false))
-  }, [reload])
-  useEffect(() => {
-    const unsub = subscribeToLiveUpdates(() => reload())
+    const unsub = subscribeToLiveUpdates(() => { setTimeout(reload, 800) })
     return unsub
   }, [reload])
 
   // Local mode: listen for product_day changes from manager dashboard (same browser, other tab)
   useEffect(() => {
-    const unsub = subscribeToLocalChanges(() => reload())
+    const unsub = subscribeToLocalChanges(() => { setTimeout(reload, 400) })
     return unsub
   }, [reload])
 
   // Cloud mode: Supabase realtime subscription for instant sync
   useEffect(() => {
-    const unsub = startRealtimeSync(() => reload())
+    const unsub = startRealtimeSync(() => { setTimeout(reload, 300) })
     return unsub
   }, [reload])
-
-  // Dynamic Audit tab loader
-  useEffect(() => {
-    if (tab === 'audit') {
-      getAuditLogs(100).then(res => setAuditLogsData(res || [])).catch(console.error)
-    }
-  }, [tab])
 
   const doCreateUser = async () => {
     const cleanUsername = uf.username.trim().toLowerCase().replace(/\s+/g, '_')
@@ -267,7 +215,7 @@ export default function AdminDashboard() {
   }
   const openEditUser = u => {
     setEditingUser(u)
-    setEditCreds({username:u.username, password:'', show:false})
+    setEditCreds({username:u.username, password:u.plain_password||'', show:false})
     setUf({username:u.username,password:'',full_name:u.full_name,email:u.email||'',phone:u.phone||'',territory:u.territory||'',role:u.role,_showPwd:false})
     setUserModal(true)
   }
@@ -443,14 +391,9 @@ useEffect(() => {
                   <span style={{width:6,height:6,borderRadius:'50%',background:'#10B981',display:'inline-block'}}/>
                   Cloud sync active
                 </div>
-              : <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                  <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',background:'#FFFBEB',borderRadius:8,fontSize:'0.68rem',fontWeight:700,color:'#D97706'}}>
-                    <span style={{width:6,height:6,borderRadius:'50%',background:'#F59E0B',display:'inline-block'}}/>
-                    Local storage only
-                  </div>
-                  <button onClick={()=>setShowSetupGuide(true)} style={{background:'#2563EB',color:'#fff',border:'none',borderRadius:8,padding:'8px 10px',fontSize:'0.72rem',fontWeight:800,cursor:'pointer',fontFamily:'inherit',width:'100%'}}>
-                    ☁️ Setup Cloud Sync
-                  </button>
+              : <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',background:'#FFFBEB',borderRadius:8,fontSize:'0.68rem',fontWeight:700,color:'#D97706'}}>
+                  <span style={{width:6,height:6,borderRadius:'50%',background:'#F59E0B',display:'inline-block'}}/>
+                  Local storage only
                 </div>
             }
             {isSupabaseConfigured() && (
@@ -479,15 +422,6 @@ useEffect(() => {
     </>
       <div className="admin-main">
 
-        <SyncModeBanner
-          isOnline={navigator.onLine}
-          syncStatus={syncStatus}
-          lastSyncAt={null}
-          pendingCount={offlineCount}
-          isSyncing={isSyncing}
-          onSyncNow={reload}
-          onSetupCloud={() => setShowSetupGuide(true)}
-        />
         <div className="admin-mobile-header">
           <button className="amh-menu" onClick={()=>setSidebarOpen(true)}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 4h14M2 9h14M2 14h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
@@ -711,58 +645,17 @@ useEffect(() => {
                               </div>
                             </div>
                             <div className="lc-metrics">
-                              <div className="lc-metric">
-                                <div className="lc-metric-val" style={{display:'flex',alignItems:'center',justifyContent:'center',gap:3,flexWrap:'wrap'}}>
-                                  {m.visits_today > 0
-                                    ? Array.from({length:Math.min(m.visits_today,5)}).map((_,i)=>(
-                                        <span key={i} style={{width:18,height:18,borderRadius:'50%',background:['#10B981','#F59E0B','#EF4444','#7C3AED','#EC4899'][i%5],color:'#fff',fontWeight:800,fontSize:'0.58rem',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{i+1}</span>
-                                      ))
-                                    : <span style={{color:'#9CA3AF',fontSize:'0.82rem'}}>0</span>
-                                  }
-                                  {m.visits_today > 5 && <span style={{fontSize:'0.6rem',color:'#6B7280',fontWeight:700}}>+{m.visits_today-5}</span>}
-                                </div>
-                                <div className="lc-metric-lbl">Visits ({m.visits_today})</div>
-                              </div>
+                              <div className="lc-metric"><div className="lc-metric-val">{m.visits_today}</div><div className="lc-metric-lbl">Visits</div></div>
                               <div className="lc-metric"><div className="lc-metric-val" style={{color:m.today_sales>0?'#2563EB':'#9CA3AF',fontSize:'0.78rem'}}>{fmt(m.today_sales)}</div><div className="lc-metric-lbl">Sales</div></div>
                               <div className="lc-metric">
                                 <div className="lc-metric-val" style={{display:'flex',alignItems:'center',justifyContent:'center'}}>
-                                  <span style={{width:10,height:10,borderRadius:'50%',background:m.active_journey?'#10B981':'#9CA3AF',display:'inline-block',flexShrink:0,animation:m.active_journey?'pulse 1.5s infinite':'none'}}/>
+                                  <span style={{width:10,height:10,borderRadius:'50%',background:m.active_journey?'#10B981':'#9CA3AF',display:'inline-block',flexShrink:0}}/>
                                 </div>
-                                <div className="lc-metric-lbl">{m.active_journey?`Active · Stop ${m.active_journey.visit_count}`:'Idle'}</div>
+                                <div className="lc-metric-lbl">Journey</div>
                               </div>
                             </div>
                             {m.last_location && (
-                              <div style={{borderTop:'1px solid #F3F4F6',padding:'8px 14px 4px'}}>
-                                {/* Last visit customer name + visit number */}
-                                <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
-                                  <span style={{
-                                    width:18,height:18,borderRadius:'50%',flexShrink:0,
-                                    background:['#10B981','#F59E0B','#EF4444','#7C3AED','#EC4899'][(m.last_location.visit_number-1)%5]||'#10B981',
-                                    color:'#fff',fontWeight:800,fontSize:'0.58rem',
-                                    display:'flex',alignItems:'center',justifyContent:'center',
-                                  }}>{m.last_location.visit_number}</span>
-                                  <div style={{fontWeight:700,fontSize:'0.78rem',color:'#111827',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                                    {m.last_location.customer_name || (m.last_location.name||'').split(',')[0]}
-                                  </div>
-                                  {m.last_location.customer_type && (
-                                    <span style={{background:'#EFF6FF',color:'#2563EB',fontSize:'0.58rem',fontWeight:700,padding:'1px 5px',borderRadius:99,flexShrink:0}}>
-                                      {m.last_location.customer_type}
-                                    </span>
-                                  )}
-                                </div>
-                                {/* Address + time */}
-                                <div style={{fontSize:'0.65rem',color:'#9CA3AF',display:'flex',justifyContent:'space-between',gap:4}}>
-                                  <span>📍 {(m.last_location.name||'').split(',').slice(0,2).join(', ')}</span>
-                                  <span style={{flexShrink:0}}>⏰ {fmtTime(m.last_location.time)}</span>
-                                </div>
-                                {/* Contact details */}
-                                {(m.last_location.contact_person || m.last_location.contact_phone) && (
-                                  <div style={{fontSize:'0.62rem',color:'#6B7280',marginTop:2}}>
-                                    {m.last_location.contact_person && <span>👤 {m.last_location.contact_person}</span>}
-                                    {m.last_location.contact_phone  && <span style={{marginLeft:8}}>📞 {m.last_location.contact_phone}</span>}
-                                  </div>
-                                )}
-                              </div>
+                              <div className="lc-location">&#x1F4CD; {(m.last_location?.name||'').split(',').slice(0,2).join(', ')} &middot; {fmtTime(m.last_location?.time)}</div>
                             )}
                             <div className="lc-drill-hint">Tap for full detail &#x2192;</div>
                           </div>
@@ -1202,21 +1095,13 @@ useEffect(() => {
               <div style={{background:'#fff',borderRadius:12,padding:'14px 18px',boxShadow:'0 1px 4px rgba(0,0,0,0.07)',marginBottom:16}}>
                 <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',marginBottom:12}}>
                   <div style={{fontWeight:800,fontSize:'0.9rem',color:'#111827'}}>Analytics</div>
-                  {['week','month','year','custom'].map(p => (
+                  {['week','month','year'].map(p => (
                     <button key={p} onClick={()=>setAnalyticsPeriod(p)}
                       style={{padding:'6px 16px',borderRadius:8,border:'1.5px solid',fontWeight:700,fontSize:'0.8rem',cursor:'pointer',background:analyticsPeriod===p?'#2563eb':'#f9fafb',color:analyticsPeriod===p?'#fff':'#6b7280',borderColor:analyticsPeriod===p?'#2563eb':'#e5e7eb'}}>
                       {p.charAt(0).toUpperCase()+p.slice(1)}
                     </button>
                   ))}
-                  {analyticsPeriod === 'custom' ? (
-                    <div style={{display:'flex',gap:6,alignItems:'center'}}>
-                      <input type="date" value={analyticsDate} onChange={e=>setAnalyticsDate(e.target.value)} style={{padding:'6px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:'0.8rem',color:'#374151'}}/>
-                      <span style={{color:'#9ca3af',fontWeight:600,fontSize:'0.8rem'}}>to</span>
-                      <input type="date" value={analyticsEndDate} onChange={e=>setAnalyticsEndDate(e.target.value)} style={{padding:'6px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:'0.8rem',color:'#374151'}}/>
-                    </div>
-                  ) : (
-                    <input type="date" value={analyticsDate} onChange={e=>setAnalyticsDate(e.target.value)} style={{padding:'6px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:'0.8rem',color:'#374151'}}/>
-                  )}
+                  <input type="date" value={analyticsDate} onChange={e=>setAnalyticsDate(e.target.value)} style={{padding:'6px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:'0.8rem',color:'#374151'}}/>
                   {analyticsData && (
                     <span style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
                       <span style={{fontSize:'0.75rem',color:'#9ca3af',fontWeight:600}}>{analyticsData.dateFrom} to {analyticsData.dateTo}</span>
@@ -1357,36 +1242,10 @@ useEffect(() => {
 
           {/* TAB: CUSTOMERS */}
           {tab==='customers' && (
-            <div style={{display:'flex',flexDirection:'column',gap:16}}>
-              {/* ── Customer Database — full list with all fields + Excel export ── */}
-              <div className="panel">
-                <div className="panel-hdr">
-                  <div>
-                    <div className="panel-title">🏪 Customer Database</div>
-                    <div style={{fontSize:'0.7rem',color:'#9CA3AF',marginTop:2}}>
-                      All customers created by sales managers · expandable detail · Excel export
-                    </div>
-                  </div>
-                  <button className="panel-action" onClick={reload}>Refresh</button>
-                </div>
-                <div className="panel-body" style={{padding:'16px'}}>
-                  <Suspense fallback={<div style={{padding:24,color:'#9CA3AF',fontSize:'0.8rem'}}>Loading customers…</div>}>
-                    <CustomerDatabase customers={allCustomers} visits={allVisitsData} managers={salesManagers}/>
-                  </Suspense>
-                </div>
-              </div>
-
-              {/* ── Customer Intelligence (visit patterns, priority, AI) ── */}
-              <div className="panel">
-                <div className="panel-hdr">
-                  <div className="panel-title">🧠 Customer Intelligence</div>
-                  <span className="panel-count">Visit patterns & priority scoring</span>
-                </div>
-                <div className="panel-body" style={{padding:'16px'}}>
-                  <Suspense fallback={null}>
-                    <CustomerIntelligence customers={allCustomers} visits={allVisitsData} managers={salesManagers}/>
-                  </Suspense>
-                </div>
+            <div className="panel">
+              <SectionHeader title="&#x1F3EA; Customer Intelligence" count={allCustomers.length} subtitle="Visit history, purchase patterns and priority scoring" actions={<button className="panel-action" onClick={reload}>Refresh</button>}/>
+              <div className="panel-body" style={{padding:'16px'}}>
+                <Suspense fallback={null}><CustomerIntelligence customers={allCustomers} visits={allVisitsData} managers={salesManagers}/></Suspense>
               </div>
             </div>
           )}
@@ -1578,15 +1437,18 @@ useEffect(() => {
         </div>
       )}
 
-      {showSetupGuide && (
-        <CloudSetupGuide onClose={() => setShowSetupGuide(false)}/>
-      )}
       {showReplay && <Suspense fallback={<div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.5)',zIndex:9999,color:'#fff',fontSize:'1rem',fontWeight:700}}>Loading Replay...</div>}><JourneyReplay onClose={()=>setShowReplay(false)}/></Suspense>}
-      {tab==='heatmap' && (
-        <Suspense fallback={<div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.5)',zIndex:9999,color:'#fff',fontSize:'1rem',fontWeight:700}}>Loading Heatmap...</div>}>
-          <SalesHeatmap onClose={() => setTab('overview')} onReplay={() => setShowReplay(true)} />
-        </Suspense>
-      )}
+      {tab==='heatmap' && <SalesHeatmapInline onReplay={()=>setShowReplay(true)}/>}
     </div>
+  )
+}
+
+function SalesHeatmapInline({ onReplay }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button id="shm-inline-trigger" style={{display:'none'}} onClick={()=>setOpen(true)}/>
+      {open && <SalesHeatmap onClose={()=>setOpen(false)}/>}
+    </>
   )
 }

@@ -1,18 +1,10 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { Component, useEffect } from 'react'
-import Login            from './pages/Login'
+import Login          from './pages/Login'
 import ManagerDashboard from './pages/ManagerDashboard'
 import AdminDashboard   from './pages/AdminDashboard'
 import ProtectedRoute   from './components/ProtectedRoute'
-import { installGlobalErrorHook, logError, getErrorReport } from './utils/errorLogger'
-import { migrateFromLocalStorage } from './utils/indexedDB'
 import './App.css'
-
-// Install global error hooks immediately
-installGlobalErrorHook()
-
-// Run one-time IndexedDB migration (async, non-blocking)
-migrateFromLocalStorage().catch(() => {})
 
 // ── Global Error Boundary ─────────────────────────────────────
 class ErrorBoundary extends Component {
@@ -22,7 +14,6 @@ class ErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     console.error('[ErrorBoundary]', error, info)
-    logError(error.message || String(error), 'ErrorBoundary', { stack: error.stack })
   }
 
   render() {
@@ -45,19 +36,6 @@ class ErrorBoundary extends Component {
             padding:'13px 28px', fontSize:'0.9rem', fontWeight:800, cursor:'pointer'
           }}>
           Reload App
-        </button>
-        {/* Copy error for support */}
-        <button
-          onClick={() => {
-            try { navigator.clipboard.writeText(getErrorReport()) } catch {}
-          }}
-          style={{
-            background:'transparent', color:'#6B7280', border:'1px solid #E5E7EB',
-            borderRadius:8, padding:'8px 16px', fontSize:'0.75rem', cursor:'pointer',
-            marginTop: 8,
-          }}
-        >
-          Copy Error Info
         </button>
         {import.meta.env.DEV && this.state.error && (
           <pre style={{marginTop:20,fontSize:'0.65rem',color:'#EF4444',maxWidth:340,textAlign:'left',wordBreak:'break-all'}}>

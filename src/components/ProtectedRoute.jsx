@@ -1,31 +1,56 @@
+import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import useAuthStore from '../store/authStore'
+import { isSupabaseConfigured } from '../utils/supabaseClient'
+import { syncCloudToLocal } from '../utils/supabaseDB'
 
-/**
- * ProtectedRoute v2 — INSTANT navigation, zero sync blocking.
- *
- * The old version blocked every page load behind a full-screen
- * "Syncing latest cloud data…" spinner by awaiting syncCloudToLocal()
- * inside the route guard. This added 2–8 seconds to every login.
- *
- * New behaviour:
- *  • Route guard only checks auth state (instant — reads from localStorage)
- *  • Background sync is kicked off by each dashboard on its own mount
- *  • A non-blocking sync indicator is shown in the dashboard header instead
- */
 const ProtectedRoute = ({ children, requireAdmin = false }) => {
-  const { isAuthenticated, isAdmin } = useAuthStore()
+    const { isAuthenticated, isAdmin } = useAuthStore()
+    const [syncing, setSyncing] = useState(() => isSupabaseConfigured())
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />
-  }
+    useEffect(() => {
+        let active = true
 
-  if (requireAdmin && !isAdmin()) {
-    return <Navigate to="/manager" replace />
-  }
+        if (!isAuthenticated || !isSupabaseConfigured()) {
+            setSyncing(false)
+            return () => { active = false }
+        }
 
-  // Render children immediately — dashboard handles its own background sync
-  return children
+        setSyncing(true)
+        syncCloudToLocal()
+            .catch(() => {})
+            .finally(() => {
+                if (active) setSyncing(false)
+            })
+
+        return () => { active = false }
+    }, [isAuthenticated])
+
+    if (!isAuthenticated) {
+        return <Navigate to="/login" replace />
+    }
+
+    if (requireAdmin && !isAdmin()) {
+        return <Navigate to="/manager" replace />
+    }
+
+    if (syncing) {
+        return (
+            <div style={{
+                minHeight: '100vh',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: '#F5F7FB',
+                color: '#6B7280',
+                fontWeight: 700,
+            }}>
+                Syncing latest cloud data...
+            </div>
+        )
+    }
+
+    return children
 }
 
 export default ProtectedRoute

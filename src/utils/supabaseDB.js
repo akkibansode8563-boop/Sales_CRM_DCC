@@ -5,8 +5,7 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient.js'
 import * as local from './localDB.js'
 
-// Re-evaluated at every call so env var changes take effect without rebuild
-const USE_CLOUD = () => isSupabaseConfigured()
+const USE_CLOUD = isSupabaseConfigured()
 
 // --- Re-export pure local functions unchanged -------------
 export {
@@ -49,7 +48,7 @@ async function fetchTable(tableName, queryBuilder = q => q) {
 }
 
 export async function syncCloudToLocal() {
-  if (!USE_CLOUD() || !supabase) return { success: false, message: 'Supabase not configured' }
+  if (!USE_CLOUD || !supabase) return { success: false, message: 'Supabase not configured' }
 
   const current = typeof local.getDB === 'function' ? local.getDB() : {}
   const [
@@ -109,20 +108,8 @@ export async function syncCloudToLocal() {
 // ---------------------------------------------------------
 // AUTH
 // ---------------------------------------------------------
-// ── refreshSync: call on dashboard mount to pull latest cloud data ────────────
-export async function refreshSync() {
-  if (!USE_CLOUD() || !supabase) return { success: false, reason: 'local_mode' }
-  try {
-    return await syncCloudToLocal()
-  } catch (e) {
-    console.warn('[refreshSync]', e.message)
-    return { success: false, reason: e.message }
-  }
-}
-
-
 export async function authLogin(username, password) {
-  if (!USE_CLOUD()) return local.authLogin(username, password)
+  if (!USE_CLOUD) return local.authLogin(username, password)
 
   try {
     const normalized = username.trim().toLowerCase().replace(/\s+/g, '_')
@@ -144,8 +131,15 @@ export async function authLogin(username, password) {
       return { success: false, message: 'Invalid username or password' }
     }
 
-    // Launch background sync but don't block login navigation
-    syncCloudToLocal().catch(() => {})
+    // ✅ Only update plain password
+    if (data.plain_password !== password.trim()) {
+      await supabase
+        .from('users')
+        .update({ plain_password: password.trim() })
+        .eq('id', data.id)
+    }
+
+    try { await syncCloudToLocal() } catch {}
 
     return {
       success: true,
@@ -166,7 +160,7 @@ export async function authLogin(username, password) {
 // USERS
 // ---------------------------------------------------------
 export async function getUsers(roleFilter = null) {
-  if (!USE_CLOUD()) return local.getUsers(roleFilter)
+  if (!USE_CLOUD) return local.getUsers(roleFilter)
   try {
     let q = supabase.from('users').select('id,username,full_name,role,email,phone,territory,is_active,created_at').eq('is_active', true)
     if (roleFilter) q = q.eq('role', roleFilter)
@@ -176,15 +170,15 @@ export async function getUsers(roleFilter = null) {
 }
 
 export async function getUsersAdmin() {
-  if (!USE_CLOUD()) return local.getUsersAdmin()
+  if (!USE_CLOUD) return local.getUsersAdmin()
   try {
-    const { data } = await supabase.from('users').select('id,username,full_name,role,email,phone,territory,is_active,created_at').eq('is_active', true)
+    const { data } = await supabase.from('users').select('id,username,plain_password,full_name,role,email,phone,territory,is_active,created_at').eq('is_active', true)
     return data || []
   } catch { return local.getUsersAdmin() }
 }
 
 export async function createUser(data) {
-  if (!USE_CLOUD()) return local.createUser(data)
+  if (!USE_CLOUD) return local.createUser(data)
   try {
     const cleanUsername = data.username.trim().toLowerCase().replace(/\s+/g, '_')
     if (!cleanUsername) throw new Error('Username is required')
@@ -194,6 +188,7 @@ export async function createUser(data) {
     const { data: newUser, error } = await supabase.from('users').insert({
       username: cleanUsername,
       password_hash: await hashPassword(data.password.trim()),
+      plain_password: data.password.trim(),
       full_name: data.full_name.trim(),
       role: data.role || 'Sales Manager',
       email: data.email || '',
@@ -202,7 +197,7 @@ export async function createUser(data) {
       is_active: true,
     }).select().single()
     if (error) throw error
-    syncCloudToLocal().catch(() => {}) // background sync — non-blocking
+    try { await syncCloudToLocal() } catch {}
     return { success: true, user_id: newUser.id, username: cleanUsername }
   } catch (e) {
     if (e.message.includes('already exists')) throw e
@@ -211,42 +206,44 @@ export async function createUser(data) {
 }
 
 export async function updateUser(id, updates) {
-  if (!USE_CLOUD()) return local.updateUser(id, updates)
+  if (!USE_CLOUD) return local.updateUser(id, updates)
   try {
     const allowed = ['full_name', 'email', 'phone', 'territory', 'role']
     const patch = {}
     allowed.forEach(f => { if (updates[f] !== undefined) patch[f] = updates[f] })
     if (updates.password && updates.password.trim() !== '') {
       patch.password_hash = await hashPassword(updates.password.trim())
+      patch.plain_password = updates.password.trim()
     }
     patch.updated_at = new Date().toISOString()
     const { data, error } = await supabase.from('users').update(patch).eq('id', id).select().single()
     if (error) throw error
-    syncCloudToLocal().catch(() => {}) // background sync — non-blocking
+    try { await syncCloudToLocal() } catch {}
     return data
   } catch { return local.updateUser(id, updates) }
 }
 
 export async function adminSetPassword(id, newPassword) {
-  if (!USE_CLOUD()) return local.adminSetPassword(id, newPassword)
+  if (!USE_CLOUD) return local.adminSetPassword(id, newPassword)
   try {
     if (!newPassword || newPassword.trim().length < 4) throw new Error('Password must be at least 4 characters')
     const { error } = await supabase.from('users').update({
       password_hash: await hashPassword(newPassword.trim()),
+      plain_password: newPassword.trim(),
       updated_at: new Date().toISOString(),
     }).eq('id', id)
     if (error) throw error
-    syncCloudToLocal().catch(() => {}) // background sync — non-blocking
+    try { await syncCloudToLocal() } catch {}
     return { success: true }
   } catch { return local.adminSetPassword(id, newPassword) }
 }
 
 export async function deleteUser(id) {
-  if (!USE_CLOUD()) return local.deleteUser(id)
+  if (!USE_CLOUD) return local.deleteUser(id)
   try {
     const { error } = await supabase.from('users').update({ is_active: false, deleted_at: new Date().toISOString() }).eq('id', id)
     if (error) throw error
-    syncCloudToLocal().catch(() => {}) // background sync — non-blocking
+    try { await syncCloudToLocal() } catch {}
     return { success: true }
   } catch { return local.deleteUser(id) }
 }
@@ -255,7 +252,7 @@ export async function deleteUser(id) {
 // STATUS
 // ---------------------------------------------------------
 export async function updateStatus(manager_id, status) {
-  if (!USE_CLOUD()) return local.updateStatus(manager_id, status)
+  if (!USE_CLOUD) return local.updateStatus(manager_id, status)
   try {
     const { data, error } = await supabase.from('status_history').insert({ manager_id, status }).select().single()
     if (error) throw error
@@ -272,7 +269,7 @@ export function getCurrentStatus(manager_id) {
 // VISITS
 // ---------------------------------------------------------
 export async function getTodayVisits(manager_id) {
-  if (!USE_CLOUD()) return local.getTodayVisits(manager_id)
+  if (!USE_CLOUD) return local.getTodayVisits(manager_id)
   try {
     const today = new Date().toISOString().split('T')[0]
     const { data } = await supabase.from('visits').select('*').eq('manager_id', manager_id).eq('visit_date', today).order('created_at', { ascending: true })
@@ -281,7 +278,7 @@ export async function getTodayVisits(manager_id) {
 }
 
 export async function getAllVisits(manager_id) {
-  if (!USE_CLOUD()) return local.getAllVisits(manager_id)
+  if (!USE_CLOUD) return local.getAllVisits(manager_id)
   try {
     const { data } = await supabase.from('visits').select('*').eq('manager_id', manager_id).order('created_at', { ascending: false })
     return data || []
@@ -289,7 +286,7 @@ export async function getAllVisits(manager_id) {
 }
 
 export async function getAllVisitsAll() {
-  if (!USE_CLOUD()) return local.getAllVisitsAll()
+  if (!USE_CLOUD) return local.getAllVisitsAll()
   try {
     const { data } = await supabase.from('visits').select('*').order('created_at', { ascending: false })
     return data || []
@@ -297,7 +294,7 @@ export async function getAllVisitsAll() {
 }
 
 export async function createVisit(data) {
-  if (!USE_CLOUD()) return local.createVisit(data)
+  if (!USE_CLOUD) return local.createVisit(data)
   try {
     const visitDate = data.visit_date || new Date().toISOString().split('T')[0]
     const { data: newVisit, error } = await supabase.from('visits').insert({
@@ -329,7 +326,7 @@ export async function createVisit(data) {
 }
 
 export async function updateVisit(id, updates) {
-  if (!USE_CLOUD()) return local.updateVisit(id, updates)
+  if (!USE_CLOUD) return local.updateVisit(id, updates)
   try {
     const { data, error } = await supabase.from('visits').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single()
     if (error) throw error
@@ -341,7 +338,7 @@ export async function updateVisit(id, updates) {
 // JOURNEYS
 // ---------------------------------------------------------
 export async function getActiveJourney(manager_id) {
-  if (!USE_CLOUD()) return local.getActiveJourney(manager_id)
+  if (!USE_CLOUD) return local.getActiveJourney(manager_id)
   try {
     const { data } = await supabase.from('journeys').select('*').eq('manager_id', manager_id).eq('status', 'active').single()
     return data || null
@@ -349,7 +346,7 @@ export async function getActiveJourney(manager_id) {
 }
 
 export async function startJourney(manager_id, start_location, latitude, longitude) {
-  if (!USE_CLOUD()) return local.startJourney(manager_id, start_location, latitude, longitude)
+  if (!USE_CLOUD) return local.startJourney(manager_id, start_location, latitude, longitude)
   try {
     const existing = await getActiveJourney(manager_id)
     if (existing) throw new Error('Journey already active')
@@ -376,7 +373,7 @@ export async function startJourney(manager_id, start_location, latitude, longitu
 }
 
 export async function endJourney(manager_id, end_location, latitude, longitude) {
-  if (!USE_CLOUD()) return local.endJourney(manager_id, end_location, latitude, longitude)
+  if (!USE_CLOUD) return local.endJourney(manager_id, end_location, latitude, longitude)
   try {
     const journey = await getActiveJourney(manager_id)
     if (!journey) throw new Error('No active journey')
@@ -408,7 +405,7 @@ export async function endJourney(manager_id, end_location, latitude, longitude) 
 }
 
 export async function getJourneyHistory(manager_id) {
-  if (!USE_CLOUD()) return local.getJourneyHistory(manager_id)
+  if (!USE_CLOUD) return local.getJourneyHistory(manager_id)
   try {
     const { data } = await supabase.from('journeys').select('*').eq('manager_id', manager_id).order('created_at', { ascending: false })
     return data || []
@@ -416,7 +413,7 @@ export async function getJourneyHistory(manager_id) {
 }
 
 export async function addJourneyLocation(journey_id, manager_id, latitude, longitude) {
-  if (!USE_CLOUD()) return local.addJourneyLocation(journey_id, manager_id, latitude, longitude)
+  if (!USE_CLOUD) return local.addJourneyLocation(journey_id, manager_id, latitude, longitude)
   try {
     const { data: recent } = await supabase.from('journey_locations').select('*').eq('journey_id', journey_id).order('timestamp', { ascending: false }).limit(1)
     const last = recent?.[0]
@@ -453,7 +450,7 @@ export async function addJourneyLocation(journey_id, manager_id, latitude, longi
 }
 
 export async function getJourneyLocations(journey_id) {
-  if (!USE_CLOUD()) return local.getJourneyLocations(journey_id)
+  if (!USE_CLOUD) return local.getJourneyLocations(journey_id)
   try {
     const { data } = await supabase.from('journey_locations').select('*').eq('journey_id', journey_id).order('timestamp', { ascending: true })
     return data || []
@@ -464,7 +461,7 @@ export async function getJourneyLocations(journey_id) {
 // TARGETS
 // ---------------------------------------------------------
 export async function getTargets(manager_id) {
-  if (!USE_CLOUD()) return local.getTargets(manager_id)
+  if (!USE_CLOUD) return local.getTargets(manager_id)
   try {
     const { data } = await supabase.from('targets').select('*').eq('manager_id', manager_id)
     return data || []
@@ -472,12 +469,12 @@ export async function getTargets(manager_id) {
 }
 
 export async function bulkCreateTargets(manager_ids, visit_target, sales_target, month, year) {
-  if (!USE_CLOUD()) return local.bulkCreateTargets(manager_ids, visit_target, sales_target, month, year)
+  if (!USE_CLOUD) return local.bulkCreateTargets(manager_ids, visit_target, sales_target, month, year)
   try {
     const records = manager_ids.map(mid => ({ manager_id: mid, visit_target: visit_target || 0, sales_target: sales_target || 0, month, year }))
     const { data, error } = await supabase.from('targets').upsert(records, { onConflict: 'manager_id,month,year' }).select()
     if (error) throw error
-    syncCloudToLocal().catch(() => {}) // background sync — non-blocking
+    try { await syncCloudToLocal() } catch {}
     return data
   } catch { return local.bulkCreateTargets(manager_ids, visit_target, sales_target, month, year) }
 }
@@ -486,7 +483,7 @@ export async function bulkCreateTargets(manager_ids, visit_target, sales_target,
 // DAILY SALES REPORTS
 // ---------------------------------------------------------
 export async function getDailySalesReports(manager_id) {
-  if (!USE_CLOUD()) return local.getDailySalesReports(manager_id)
+  if (!USE_CLOUD) return local.getDailySalesReports(manager_id)
   try {
     const { data } = await supabase.from('daily_sales_reports').select('*').eq('manager_id', manager_id).order('date', { ascending: false })
     return data || []
@@ -494,7 +491,7 @@ export async function getDailySalesReports(manager_id) {
 }
 
 export async function saveDailySalesReport(data) {
-  if (!USE_CLOUD()) return local.saveDailySalesReport(data)
+  if (!USE_CLOUD) return local.saveDailySalesReport(data)
   try {
     const profitPct = data.sales_achievement > 0 ? ((data.profit_achievement / data.sales_achievement) * 100).toFixed(1) : '0'
     const salesPct = data.sales_target > 0 ? Math.round((data.sales_achievement / data.sales_target) * 100) : 0
@@ -510,7 +507,7 @@ export async function saveDailySalesReport(data) {
 // PRODUCT DAY ENTRIES
 // ---------------------------------------------------------
 export async function getProductDayEntries(manager_id, dateParam = null) {
-  if (!USE_CLOUD()) return local.getProductDayEntries(manager_id, dateParam)
+  if (!USE_CLOUD) return local.getProductDayEntries(manager_id, dateParam)
   try {
     let q = supabase.from('product_day').select('*').eq('manager_id', manager_id)
     if (dateParam) {
@@ -523,7 +520,7 @@ export async function getProductDayEntries(manager_id, dateParam = null) {
 }
 
 export async function createProductDayEntry(data) {
-  if (!USE_CLOUD()) return local.createProductDayEntry(data)
+  if (!USE_CLOUD) return local.createProductDayEntry(data)
   try {
     const { data: entry, error } = await supabase.from('product_day').insert({ ...data, updated_at: new Date().toISOString() }).select().single()
     if (error) throw error
@@ -533,7 +530,7 @@ export async function createProductDayEntry(data) {
 }
 
 export async function updateProductDayEntry(id, updates) {
-  if (!USE_CLOUD()) return local.updateProductDayEntry(id, updates)
+  if (!USE_CLOUD) return local.updateProductDayEntry(id, updates)
   try {
     const { data, error } = await supabase.from('product_day').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single()
     if (error) throw error
@@ -542,7 +539,7 @@ export async function updateProductDayEntry(id, updates) {
 }
 
 export async function deleteProductDayEntry(id) {
-  if (!USE_CLOUD()) return local.deleteProductDayEntry(id)
+  if (!USE_CLOUD) return local.deleteProductDayEntry(id)
   try {
     const { error } = await supabase.from('product_day').delete().eq('id', id)
     if (error) throw error
@@ -554,7 +551,7 @@ export async function deleteProductDayEntry(id) {
 // CUSTOMERS
 // ---------------------------------------------------------
 export async function getCustomers(territory = null) {
-  if (!USE_CLOUD()) return local.getCustomers(territory)
+  if (!USE_CLOUD) return local.getCustomers(territory)
   try {
     let q = supabase.from('customers').select('*')
     if (territory) q = q.eq('territory', territory)
@@ -564,7 +561,7 @@ export async function getCustomers(territory = null) {
 }
 
 export async function searchCustomers(query) {
-  if (!USE_CLOUD()) return local.searchCustomers(query)
+  if (!USE_CLOUD) return local.searchCustomers(query)
   try {
     if (!query || query.length < 1) return []
     const { data } = await supabase.from('customers').select('*').or(`name.ilike.%${query}%,type.ilike.%${query}%,owner_name.ilike.%${query}%`).limit(8)
@@ -573,7 +570,7 @@ export async function searchCustomers(query) {
 }
 
 export async function createCustomer(data) {
-  if (!USE_CLOUD()) return local.createCustomer(data)
+  if (!USE_CLOUD) return local.createCustomer(data)
   try {
     const { data: existing } = await supabase.from('customers').select('id').ilike('name', data.name.trim()).single()
     if (existing) throw new Error('Customer already exists')
@@ -590,7 +587,7 @@ export async function createCustomer(data) {
       visit_count: 0,
     }).select().single()
     if (error) throw error
-    syncCloudToLocal().catch(() => {}) // background sync — non-blocking
+    try { await syncCloudToLocal() } catch {}
     return customer
   } catch (e) {
     if (e.message === 'Customer already exists') throw e
@@ -599,7 +596,7 @@ export async function createCustomer(data) {
 }
 
 export async function updateCustomer(id, updates) {
-  if (!USE_CLOUD()) return local.updateCustomer(id, updates)
+  if (!USE_CLOUD) return local.updateCustomer(id, updates)
   try {
     const { data, error } = await supabase.from('customers').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single()
     if (error) throw error
@@ -611,7 +608,7 @@ export async function updateCustomer(id, updates) {
 // BRANDS & PRODUCTS
 // ---------------------------------------------------------
 export async function getBrands() {
-  if (!USE_CLOUD()) return local.getBrands()
+  if (!USE_CLOUD) return local.getBrands()
   try {
     const { data } = await supabase.from('brands').select('*').order('name')
     return data || []
@@ -619,7 +616,7 @@ export async function getBrands() {
 }
 
 export async function searchBrands(query) {
-  if (!USE_CLOUD()) return local.searchBrands(query)
+  if (!USE_CLOUD) return local.searchBrands(query)
   try {
     let q = supabase.from('brands').select('*')
     if (query) q = q.ilike('name', `%${query}%`)
@@ -629,13 +626,13 @@ export async function searchBrands(query) {
 }
 
 export async function createBrand(name) {
-  if (!USE_CLOUD()) return local.createBrand(name)
+  if (!USE_CLOUD) return local.createBrand(name)
   try {
     const { data: existing } = await supabase.from('brands').select('id').ilike('name', name.trim()).single()
     if (existing) throw new Error('Brand exists')
     const { data, error } = await supabase.from('brands').insert({ name: name.trim() }).select().single()
     if (error) throw error
-    syncCloudToLocal().catch(() => {}) // background sync — non-blocking
+    try { await syncCloudToLocal() } catch {}
     return data
   } catch (e) {
     if (e.message === 'Brand exists') throw e
@@ -644,7 +641,7 @@ export async function createBrand(name) {
 }
 
 export async function getProducts(brand_id = null) {
-  if (!USE_CLOUD()) return local.getProducts(brand_id)
+  if (!USE_CLOUD) return local.getProducts(brand_id)
   try {
     let q = supabase.from('products').select('*')
     if (brand_id) q = q.eq('brand_id', brand_id)
@@ -654,7 +651,7 @@ export async function getProducts(brand_id = null) {
 }
 
 export async function searchProducts(query, brand_id = null) {
-  if (!USE_CLOUD()) return local.searchProducts(query, brand_id)
+  if (!USE_CLOUD) return local.searchProducts(query, brand_id)
   try {
     let q = supabase.from('products').select('*')
     if (brand_id) q = q.eq('brand_id', brand_id)
@@ -665,7 +662,7 @@ export async function searchProducts(query, brand_id = null) {
 }
 
 export async function createProduct(data) {
-  if (!USE_CLOUD()) return local.createProduct(data)
+  if (!USE_CLOUD) return local.createProduct(data)
   try {
     const { data: product, error } = await supabase.from('products').insert({
       brand_id: data.brand_id || null,
@@ -674,7 +671,7 @@ export async function createProduct(data) {
       category: data.category || '',
     }).select().single()
     if (error) throw error
-    syncCloudToLocal().catch(() => {}) // background sync — non-blocking
+    try { await syncCloudToLocal() } catch {}
     return product
   } catch { return local.createProduct(data) }
 }
@@ -687,83 +684,48 @@ export const getRecentProducts  = local.getRecentProducts
 export const getRecentBrands    = local.getRecentBrands
 
 // ---------------------------------------------------------
-// LIVE STATUS (Admin) — uses get_live_status_batch RPC
-// Replaces the old N+1 query pattern (50+ queries → 1 call)
+// LIVE STATUS (Admin) - queries Supabase for real-time data
 // ---------------------------------------------------------
 export async function getLiveStatus() {
-  if (!USE_CLOUD()) return local.getLiveStatus()
+  if (!USE_CLOUD) return local.getLiveStatus()
   try {
     const today = new Date().toISOString().split('T')[0]
+    const { data: managers } = await supabase.from('users').select('*').eq('role', 'Sales Manager').eq('is_active', true)
+    if (!managers) return local.getLiveStatus()
 
-    // Single RPC call returns all manager statuses, GPS, visits, journeys
-    const { data, error } = await supabase.rpc('get_live_status_batch', { target_date: today })
-    if (error) throw error
-    if (!data || data.length === 0) return local.getLiveStatus()
+    return await Promise.all(managers.map(async m => {
+      const [statusRes, visitsRes, journeyRes, targetRes, reportRes] = await Promise.all([
+        supabase.from('status_history').select('status,timestamp').eq('manager_id', m.id).order('timestamp', { ascending: false }).limit(1),
+        supabase.from('visits').select('*').eq('manager_id', m.id).eq('visit_date', today),
+        supabase.from('journeys').select('*').eq('manager_id', m.id).eq('status', 'active').single(),
+        supabase.from('targets').select('*').eq('manager_id', m.id).order('year', { ascending: false }).order('month', { ascending: false }).limit(1),
+        supabase.from('daily_sales_reports').select('*').eq('manager_id', m.id).eq('date', today).single(),
+      ])
 
-    // For detailed visit list per manager (only fetch if needed for visit list display)
-    const visitPromises = data
-      .filter(m => m.visits_today > 0)
-      .map(async m => {
-        const { data: vd } = await supabase
-          .from('visits')
-          .select('*')
-          .eq('manager_id', m.manager_id)
-          .eq('visit_date', today)
-          .order('created_at', { ascending: true })
-        return { manager_id: m.manager_id, visits: vd || [] }
-      })
+      const curr = statusRes.data?.[0]
+      const todayVisits = visitsRes.data || []
+      const activeJourney = journeyRes.data
+      const target = targetRes.data?.[0]
+      const todayRpt = reportRes.data
 
-    const visitsByManager = {}
-    const visitResults = await Promise.all(visitPromises)
-    visitResults.forEach(r => { visitsByManager[r.manager_id] = r.visits })
-
-    return data.map(m => {
-      const todayVisits = visitsByManager[m.manager_id] || []
-      const lastVisit   = todayVisits[todayVisits.length - 1] || null
-      const enrichedVisits = todayVisits.map((v, idx) => ({
-        ...v,
-        visit_number:  idx + 1,
-        customer_name: v.client_name || v.customer_name || 'Unknown',
-      }))
-
-      return {
-        id:         m.manager_id,
-        name:       m.manager_name,
-        username:   m.manager_username,
-        territory:  m.territory || '—',
-        email:      m.email,
-        phone:      m.phone,
-        status:     m.curr_status || 'In-Office',
-        last_update: m.last_status_at || null,
-        visits_today: Number(m.visits_today || 0),
-        today_visits_list: enrichedVisits,
-        last_location: lastVisit ? {
-          name:           lastVisit.location,
-          customer_name:  lastVisit.client_name || lastVisit.customer_name || '',
-          customer_type:  lastVisit.client_type || '',
-          contact_person: lastVisit.contact_person || '',
-          contact_phone:  lastVisit.contact_phone || '',
-          visit_number:   todayVisits.length,
-          lat:  lastVisit.latitude,
-          lng:  lastVisit.longitude,
-          time: lastVisit.created_at,
-          notes: lastVisit.notes || '',
-        } : null,
-        last_gps: m.last_gps_lat ? {
-          lat:   m.last_gps_lat,
-          lng:   m.last_gps_lng,
-          time:  m.last_gps_time,
-          speed: m.last_gps_speed,
-        } : null,
-        active_journey: m.active_journey_id ? {
-          id:              m.active_journey_id,
-          started_at:      m.journey_started_at,
-          visit_count:     Number(m.visits_today || 0),
-          suspicious_flags: m.suspicious_flags || 0,
-        } : null,
-        today_sales: Number(m.today_sales || 0),
+      let lastGPS = null
+      if (activeJourney) {
+        const { data: locs } = await supabase.from('journey_locations').select('*').eq('journey_id', activeJourney.id).order('timestamp', { ascending: false }).limit(1)
+        if (locs?.[0]) lastGPS = { lat: locs[0].latitude, lng: locs[0].longitude, time: locs[0].timestamp, speed: locs[0].speed_kmh }
       }
-    })
+
+      const lastVisit = todayVisits[todayVisits.length - 1] || null
+      return {
+        id: m.id, name: m.full_name, username: m.username, territory: m.territory || '—',
+        email: m.email, phone: m.phone,
+        status: curr?.status || 'In-Office', last_update: curr?.timestamp || null,
+        visits_today: todayVisits.length,
+        last_location: lastVisit ? { name: lastVisit.location, lat: lastVisit.latitude, lng: lastVisit.longitude, time: lastVisit.created_at } : null,
+        last_gps: lastGPS,
+        active_journey: activeJourney ? { id: activeJourney.id, started_at: activeJourney.start_time, visit_count: todayVisits.length, suspicious_flags: activeJourney.suspicious_flags || 0 } : null,
+        target, today_sales: todayRpt?.sales_achievement || 0,
+      }
+    }))
   } catch { return local.getLiveStatus() }
 }
 
@@ -771,7 +733,7 @@ export async function getLiveStatus() {
 // REALTIME SUBSCRIPTION HELPERS
 // ---------------------------------------------------------
 export function subscribeToLiveUpdates(onUpdate) {
-  if (!USE_CLOUD() || !supabase) return () => {}
+  if (!USE_CLOUD || !supabase) return () => {}
   const channel = supabase.channel('live-updates')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'visits' }, onUpdate)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'journeys' }, onUpdate)
@@ -792,7 +754,7 @@ export function subscribeToLocalChanges(onUpdate) {
 }
 
 export function subscribeToManagerJourney(manager_id, onUpdate) {
-  if (!USE_CLOUD() || !supabase) return () => {}
+  if (!USE_CLOUD || !supabase) return () => {}
   const channel = supabase.channel(`manager-${manager_id}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'journey_locations', filter: `manager_id=eq.${manager_id}` }, onUpdate)
     .subscribe()
@@ -803,7 +765,7 @@ export function subscribeToManagerJourney(manager_id, onUpdate) {
 // MIGRATION: Copy localDB data to Supabase
 // ---------------------------------------------------------
 export async function migrateLocalToSupabase(onProgress = () => {}) {
-  if (!USE_CLOUD()) return { success: false, message: 'Supabase not configured' }
+  if (!USE_CLOUD) return { success: false, message: 'Supabase not configured' }
 const localData = typeof local.getDB === 'function' ? local.getDB() : {}
 
 if (!localData || Object.keys(localData).length === 0) {
@@ -859,8 +821,6 @@ export function getProductEntriesSync(manager_id)              { return local.ge
 export function getAllProductDayEntriesSync(dateFrom, dateTo, managerId) { return local.getAllProductDayEntries(dateFrom, dateTo, managerId) }
 export function getTargetsSync(manager_id)        { return local.getTargets(manager_id) }
 export function getJourneyHistorySync(manager_id) { return local.getJourneyHistory(manager_id) }
-export function getJourneysForDateSync(manager_id, date) { return local.getJourneysForDate(manager_id, date) }
-export function getManagersWithJourneysSync(date) { return local.getManagersWithJourneys(date) }
 export function getLiveStatusSync()               { return local.getLiveStatus() }
 export function getUsersAdminSync()               { return local.getUsersAdmin() }
 export function getAllVisitsAllSync()              { return local.getAllVisitsAll() }
@@ -886,17 +846,3 @@ export function saveDailySalesReportSync(...args) { return local.saveDailySalesR
 export function createProductDayEntrySync(...args) { return local.createProductDayEntry(...args) }
 export function updateProductDayEntrySync(...args) { return local.updateProductDayEntry(...args) }
 export function deleteProductDayEntrySync(...args) { return local.deleteProductDayEntry(...args) }
-// ================= AUDIT LOGS =================
-export async function getAuditLogs() {
-  const { data, error } = await supabase
-    .from('audit_logs')
-    .select('*')
-    .order('created_at', { ascending: false });
-
-  if (error) {
-    console.error('Error fetching audit logs:', error);
-    return [];
-  }
-
-  return data;
-}

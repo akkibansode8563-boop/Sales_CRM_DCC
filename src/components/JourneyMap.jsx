@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { calcDistanceKm, calcTravelTime, searchCustomers, getRecentCustomers } from '../utils/supabaseDB'
+import { calcDistanceKm, calcTravelTime } from '../utils/supabaseDB'
 import { createVisitDraft, validateVisitDraft } from '../utils/visitRequirements'
-import AutocompleteInput from './AutocompleteInput'
 import './JourneyMap.css'
 
 let L = null
@@ -22,13 +21,7 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
   const [showForm,   setShowForm]   = useState(false)
   const [formError,  setFormError]  = useState('')
   const [isOnline,   setIsOnline]   = useState(navigator.onLine)
-  const [photoPreview,  setPhotoPreview]  = useState(null)
-  // Voice note — optional
-  const [isRecording,   setIsRecording]   = useState(false)
-  const [voiceNote,     setVoiceNote]     = useState(null)
-  const [recordingTime, setRecordingTime] = useState(0)
-  const [mediaRecorder, setMediaRecorder] = useState(null)
-  const [recordTimer,   setRecordTimer]   = useState(null)
+  const [photoPreview, setPhotoPreview] = useState(null)
   const [form, setForm] = useState(() => {
     const draft = createVisitDraft()
     return {
@@ -174,34 +167,21 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
 
   const getLocation = () => {
     setLocating(true)
-    setFormError('')
-    
-    const successCb = async p => {
-      const c = {lat:p.coords.latitude, lng:p.coords.longitude}
-      setCurrentPos(c)
-      setForm(f=>({...f, latitude:c.lat, longitude:c.lng, location:`${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}`}))
-      mapInstanceRef.current?.setView([c.lat,c.lng],15)
-      setLocating(false)
-      try {
-        const d = await (await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${c.lat}&lon=${c.lng}&format=json`)).json()
-        const addr = d.display_name?.split(',').slice(0,3).join(', ')
-        if (addr) setForm(f=>({...f, location:addr}))
-      } catch {}
-    }
-
-    const errorCb = () => {
-      // Fallback to low accuracy / cached location
-      navigator.geolocation?.getCurrentPosition(
-        successCb,
-        (err) => { setLocating(false); setFormError('GPS unavailable: ' + err.message) },
-        { enableHighAccuracy: false, maximumAge: 300000, timeout: 15000 }
-      )
-    }
-
     navigator.geolocation?.getCurrentPosition(
-      successCb,
-      errorCb,
-      { enableHighAccuracy: true, maximumAge: 10000, timeout: 8000 }
+      async p => {
+        const c = {lat:p.coords.latitude, lng:p.coords.longitude}
+        setCurrentPos(c)
+        setForm(f=>({...f, latitude:c.lat, longitude:c.lng, location:`${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}`}))
+        mapInstanceRef.current?.setView([c.lat,c.lng],15)
+        setLocating(false)
+        try {
+          const d = await (await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${c.lat}&lon=${c.lng}&format=json`)).json()
+          const addr = d.display_name?.split(',').slice(0,3).join(', ')
+          if (addr) setForm(f=>({...f, location:addr}))
+        } catch {}
+      },
+      () => setLocating(false),
+      {enableHighAccuracy:true, timeout:10000}
     )
   }
 
@@ -215,7 +195,6 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
       visit_type:'Field Visit', notes:'', latitude:null, longitude:null, photo:null, voice_note:null
     })
     setPhotoPreview(null)
-    setVoiceNote(null)
     setShowForm(false); setCurrentPos(null)
   }
 
@@ -235,44 +214,6 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
       reader.readAsDataURL(file)
     }
     input.click()
-  }
-
-  // ── Voice note recording ─────────────────────────────────
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const chunks = []
-      const rec = new MediaRecorder(stream)
-      rec.ondataavailable = e => chunks.push(e.data)
-      rec.onstop = () => {
-        const blob = new Blob(chunks, { type: 'audio/webm' })
-        const reader = new FileReader()
-        reader.onload = ev => {
-          setVoiceNote(ev.target.result)
-          setForm(f => ({ ...f, voice_note: ev.target.result }))
-        }
-        reader.readAsDataURL(blob)
-        stream.getTracks().forEach(t => t.stop())
-      }
-      rec.start()
-      setMediaRecorder(rec)
-      setIsRecording(true)
-      setRecordingTime(0)
-      const timer = setInterval(() => setRecordingTime(t => {
-        if (t >= 60) { rec.stop(); clearInterval(timer); setIsRecording(false); return t }
-        return t + 1
-      }), 1000)
-      setRecordTimer(timer)
-    } catch { setFormError('Microphone access denied') }
-  }
-  const stopRecording = () => {
-    if (mediaRecorder) mediaRecorder.stop()
-    setIsRecording(false)
-    if (recordTimer) { clearInterval(recordTimer); setRecordTimer(null) }
-  }
-  const clearVoiceNote = () => {
-    setVoiceNote(null)
-    setForm(f => ({ ...f, voice_note: null }))
   }
 
   const visitsWithDist = visits.map((v,i) => {
@@ -363,27 +304,6 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
       {/* -- Log Visit Panel -- */}
       {journey && (
         <div className="jmap-log-panel">
-          {/* ── Live stop counter ── */}
-          {visits.length > 0 && (
-            <div style={{display:'flex',alignItems:'center',gap:6,padding:'7px 12px 0',flexWrap:'wrap'}}>
-              {visits.map((v,i) => (
-                <div key={v.id||i} style={{
-                  display:'flex',alignItems:'center',justifyContent:'center',
-                  width:26,height:26,borderRadius:'50%',
-                  background:STOP_COLORS[i%STOP_COLORS.length],
-                  color:'#fff',fontWeight:800,fontSize:'0.72rem',
-                  flexShrink:0,cursor:'default',
-                  title:v.client_name,
-                  boxShadow:'0 2px 6px rgba(0,0,0,0.15)',
-                }}
-                title={`Stop ${i+1}: ${v.client_name||'Unknown'}`}
-                >{i+1}</div>
-              ))}
-              <div style={{fontSize:'0.65rem',color:'#9CA3AF',fontWeight:600,marginLeft:2}}>
-                {visits.length} stop{visits.length!==1?'s':''} logged
-              </div>
-            </div>
-          )}
           {!showForm ? (
             <button className="jmap-log-btn" onClick={() => { setShowForm(true); getLocation() }}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -400,40 +320,9 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
                 </div>
               )}
               <div className="jmap-form-row">
-                <div className="jmap-fg" style={{ position: 'relative' }}>
+                <div className="jmap-fg">
                   <label>Customer Name *</label>
-                  <AutocompleteInput
-                    value={form.client_name}
-                    onChange={v => setForm(f=>({...f, client_name:v, customer_id:null}))}
-                    onSelect={c => {
-                      if (!c) return
-                      setForm(f=>({
-                        ...f,
-                        client_name: c.name,
-                        customer_id: c.id,
-                        client_type: c.type || f.client_type,
-                        location: c.address || f.location,
-                        contact_person: c.owner_name || f.contact_person,
-                        contact_phone: c.phone || f.contact_phone,
-                      }))
-                    }}
-                    placeholder="Search or near customer…"
-                    searchFn={searchCustomers}
-                    recentsFn={getRecentCustomers}
-                    renderItem={c => (
-                      <div style={{display:'flex',flexDirection:'column',gap:1}}>
-                        <span style={{fontWeight:600}}>{c.name}</span>
-                        {(c.owner_name || c.phone) && (
-                          <span style={{fontSize:'0.65rem',color:'#9CA3AF'}}>
-                            {c.owner_name && <span>👤 {c.owner_name}</span>}
-                            {c.phone && <span> 📞 {c.phone}</span>}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    renderMeta={c => <span style={{fontSize:'0.65rem',background:'#EFF6FF',padding:'2px 6px',borderRadius:8,color:'#2563EB'}}>{c.type}</span>}
-                    autoFocus
-                  />
+                  <input value={form.client_name} onChange={e=>setForm(f=>({...f,client_name:e.target.value}))} placeholder="e.g. ABC Distributors" autoFocus/>
                 </div>
                 <div className="jmap-fg">
                   <label>Nature of Business *</label>
@@ -505,35 +394,12 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
                   </button>
                 )}
               </div>
-              {/* ── Voice Note (optional) ── */}
-              <div className="jmap-fg" style={{marginBottom:10}}>
-                <label>Voice Note <span style={{fontWeight:400,color:'#9CA3AF',fontSize:'0.62rem'}}>(optional)</span></label>
-                {voiceNote ? (
-                  <div style={{display:'flex',alignItems:'center',gap:8,padding:'9px 12px',background:'#F0FDF4',border:'1.5px solid #6EE7B7',borderRadius:'var(--r-sm)'}}>
-                    <span style={{fontSize:'1rem'}}>🎤</span>
-                    <audio controls src={voiceNote} style={{flex:1,height:30}}/>
-                    <button onClick={clearVoiceNote} style={{background:'none',border:'none',cursor:'pointer',color:'#9CA3AF',fontSize:'1rem',padding:2}}>✕</button>
-                  </div>
-                ) : isRecording ? (
-                  <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',background:'#FEF2F2',border:'1.5px solid #FECACA',borderRadius:'var(--r-sm)'}}>
-                    <span style={{width:8,height:8,borderRadius:'50%',background:'#EF4444',animation:'pulse 1s infinite',display:'inline-block'}}/>
-                    <span style={{flex:1,fontSize:'0.8rem',fontWeight:700,color:'#DC2626'}}>Recording… {recordingTime}s / 60s</span>
-                    <button onClick={stopRecording} style={{background:'#EF4444',border:'none',borderRadius:6,padding:'5px 12px',color:'#fff',fontWeight:700,fontSize:'0.75rem',cursor:'pointer',fontFamily:'inherit'}}>Stop</button>
-                  </div>
-                ) : (
-                  <button onClick={startRecording} style={{width:'100%',padding:'10px',border:'1.5px dashed #D1D5DB',borderRadius:'var(--r-sm)',background:'#F9FAFB',color:'#374151',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,fontSize:'0.8rem',fontWeight:600,fontFamily:'inherit'}}>
-                    🎤 Record Voice Note (optional)
-                  </button>
-                )}
-              </div>
-
               <div style={{display:'grid',gridTemplateColumns:'1fr 2fr',gap:8}}>
                 <button
                   onClick={() => {
                     setShowForm(false)
                     setFormError('')
                     setPhotoPreview(null)
-                    setVoiceNote(null)
                     setForm({
                       client_name:'', contact_person:'', contact_phone:'', client_type:'Retailer', location:'',
                       visit_type:'Field Visit', notes:'', latitude:null, longitude:null, photo:null, voice_note:null

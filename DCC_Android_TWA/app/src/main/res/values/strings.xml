@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">DCC SalesForce</string>
-    <string name="short_name">DCC SFA</string>
-    <string name="host_url">https://sales-crm-dcc.vercel.app</string>
-</resources>
