@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { calcDistanceKm, calcTravelTime } from '../utils/supabaseDB'
 import { createVisitDraft, validateVisitDraft } from '../utils/visitRequirements'
+import { getCurrentPosition, getLocationFallback, reverseGeocodeCached } from '../utils/location'
 import './JourneyMap.css'
 
 let L = null
@@ -167,22 +168,21 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
 
   const getLocation = () => {
     setLocating(true)
-    navigator.geolocation?.getCurrentPosition(
-      async p => {
-        const c = {lat:p.coords.latitude, lng:p.coords.longitude}
+    getCurrentPosition({ timeout: 6500 }).then(async (coords) => {
+        if (!coords) {
+          setLocating(false)
+          return
+        }
+        const c = {lat: coords.latitude, lng: coords.longitude}
         setCurrentPos(c)
-        setForm(f=>({...f, latitude:c.lat, longitude:c.lng, location:`${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}`}))
+        setForm(f=>({...f, latitude:c.lat, longitude:c.lng, location:getLocationFallback(c.lat, c.lng)}))
         mapInstanceRef.current?.setView([c.lat,c.lng],15)
         setLocating(false)
         try {
-          const d = await (await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${c.lat}&lon=${c.lng}&format=json`)).json()
-          const addr = d.display_name?.split(',').slice(0,3).join(', ')
+          const addr = await reverseGeocodeCached(c.lat, c.lng)
           if (addr) setForm(f=>({...f, location:addr}))
         } catch {}
-      },
-      () => setLocating(false),
-      {enableHighAccuracy:true, timeout:10000}
-    )
+      })
   }
 
   const submitVisit = () => {

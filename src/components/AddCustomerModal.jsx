@@ -5,6 +5,7 @@
 // -----------------------------------------------------------
 import { useState, useEffect } from 'react'
 import { createCustomer, getTerritories } from '../utils/supabaseDB'
+import { getCurrentPosition, reverseGeocodeCached } from '../utils/location'
 import './AddCustomerModal.css'
 
 const CLIENT_TYPES = ['Retailer','Distributor','Wholesaler','Dealer','Direct Customer','Other']
@@ -25,30 +26,27 @@ export default function AddCustomerModal({ onCreated, onClose, createdBy }) {
   useEffect(() => { autoDetect() }, [])
 
   const autoDetect = async () => {
-    if (!navigator.geolocation) return
     setLocating(true); setLocError('')
     try {
-      const pos = await new Promise((res, rej) =>
-        navigator.geolocation.getCurrentPosition(res, rej, { timeout: 9000, enableHighAccuracy: true })
-      )
-      const lat = pos.coords.latitude, lng = pos.coords.longitude
+      const coords = await getCurrentPosition({ timeout: 6500 })
+      if (!coords) {
+        throw new Error('NO_LOCATION')
+      }
+      const lat = coords.latitude, lng = coords.longitude
       setForm(p => ({ ...p, latitude: lat, longitude: lng }))
       setGpsFixed(true)
       // Reverse geocode
       try {
-        const d = await (await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`)).json()
-        const addr = d.address
-        const parts = [addr?.road, addr?.suburb, addr?.city || addr?.town, addr?.state].filter(Boolean)
-        const addrStr = parts.slice(0,3).join(', ')
-        const territory = territories.find(t => d.display_name?.toLowerCase().includes(t.toLowerCase().split(' ')[0]))
+        const resolvedAddress = await reverseGeocodeCached(lat, lng)
+        const territory = territories.find(t => resolvedAddress?.toLowerCase().includes(t.toLowerCase().split(' ')[0]))
         setForm(p => ({
           ...p,
-          address: addrStr || d.display_name?.split(',').slice(0,3).join(', ') || '',
+          address: resolvedAddress || '',
           territory: territory || p.territory
         }))
       } catch {}
     } catch(e) {
-      setLocError(e.code === 1 ? 'Location access denied. Please enter address manually.' : 'Could not detect location.')
+      setLocError(e?.code === 1 ? 'Location access denied. Please enter address manually.' : 'Could not detect location.')
     } finally { setLocating(false) }
   }
 

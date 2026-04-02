@@ -42,6 +42,7 @@ import JourneyStartModal from '../components/JourneyStartModal'
 import dccLogo from '../assets/dcc-logo.png'
 import { createVisitDraft, validateVisitDraft } from '../utils/visitRequirements'
 import { startRealtimeSync, onSyncStatusChange, getQueueCount, forceSyncNow, getLastSyncAt } from '../services/syncService'
+import { getCurrentPosition, getLocationFallback, reverseGeocodeCached } from '../utils/location'
 import './ManagerDashboard.css'
 
 /* -- Constants -- */
@@ -500,17 +501,8 @@ export default function ManagerDashboard() {
   }, [reload])
 
   /* -- GPS helpers -- */
-  const getGPS = () => new Promise(res =>
-    navigator.geolocation
-      ? navigator.geolocation.getCurrentPosition(p=>res({latitude:p.coords.latitude,longitude:p.coords.longitude}),()=>res(null),{timeout:9000,enableHighAccuracy:true})
-      : res(null)
-  )
-  const reverseGeo = async (lat,lng) => {
-    try {
-      const d = await (await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`)).json()
-      return d.display_name?.split(',').slice(0,3).join(', ')||`${lat.toFixed(4)},${lng.toFixed(4)}`
-    } catch { return `${lat.toFixed(4)},${lng.toFixed(4)}` }
-  }
+  const getGPS = useCallback(() => getCurrentPosition(), [])
+  const reverseGeo = useCallback((lat, lng) => reverseGeocodeCached(lat, lng), [])
   const checkNearby = async () => {
     const c = await getGPS()
     if (c) {
@@ -623,20 +615,29 @@ export default function ManagerDashboard() {
     setShowJourneyModal(false)
     toastMsg('Starting journey…','info')
     try {
-      const loc = gpsCoords
-        ? await reverseGeo(gpsCoords.lat, gpsCoords.lng)
+      const fallbackLocation = gpsCoords
+        ? getLocationFallback(gpsCoords.lat, gpsCoords.lng)
         : 'Starting Point'
-      const j = await startJourney(user.id, loc, gpsCoords?.lat, gpsCoords?.lng)
+      const j = await startJourney(user.id, fallbackLocation, gpsCoords?.lat, gpsCoords?.lng)
       setJourney(j)
       await changeStatus(mode)
       toastMsg(`${mode} journey started! 🚀`)
       setShowMap(true)
+      if (gpsCoords) {
+        reverseGeo(gpsCoords.lat, gpsCoords.lng)
+          .then((resolvedLocation) => {
+            if (resolvedLocation && resolvedLocation !== fallbackLocation) {
+              setJourney((current) => current?.id === j.id ? { ...current, start_location: resolvedLocation } : current)
+            }
+          })
+          .catch(() => {})
+      }
     } catch(e) { toastMsg(e.message,'error') }
   }
   const handleEndJourney = async () => {
     toastMsg('Getting your location…','info')
     const c = await getGPS()
-    const loc = c ? await reverseGeo(c.latitude,c.longitude) : 'End Point'
+    const loc = c ? getLocationFallback(c.latitude, c.longitude) : 'End Point'
     try {
       const j = await endJourney(user.id,loc,c?.latitude,c?.longitude)
       setJourney(null); await changeStatus('In-Office'); reload()

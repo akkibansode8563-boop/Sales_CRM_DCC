@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { Navigate } from 'react-router-dom'
 import useAuthStore from '../store/authStore'
 import { isSupabaseConfigured } from '../utils/supabaseClient'
@@ -6,24 +6,33 @@ import { syncCloudToLocal } from '../utils/supabaseDB'
 
 const ProtectedRoute = ({ children, requireAdmin = false }) => {
     const { isAuthenticated, isAdmin } = useAuthStore()
-    const [syncing, setSyncing] = useState(() => isSupabaseConfigured())
+    const hasScheduledSyncRef = useRef(false)
 
     useEffect(() => {
-        let active = true
-
         if (!isAuthenticated || !isSupabaseConfigured()) {
-            setSyncing(false)
-            return () => { active = false }
+            hasScheduledSyncRef.current = false
+            return undefined
         }
 
-        setSyncing(true)
-        syncCloudToLocal()
-            .catch(() => {})
-            .finally(() => {
-                if (active) setSyncing(false)
-            })
+        if (hasScheduledSyncRef.current) {
+            return undefined
+        }
 
-        return () => { active = false }
+        hasScheduledSyncRef.current = true
+        const scheduleSync = window.requestIdleCallback
+            ? window.requestIdleCallback
+            : (callback) => window.setTimeout(callback, 350)
+        const cancelScheduledSync = window.cancelIdleCallback
+            ? window.cancelIdleCallback
+            : window.clearTimeout
+
+        const taskId = scheduleSync(() => {
+            syncCloudToLocal().catch(() => {})
+        })
+
+        return () => {
+            cancelScheduledSync(taskId)
+        }
     }, [isAuthenticated])
 
     if (!isAuthenticated) {
@@ -32,22 +41,6 @@ const ProtectedRoute = ({ children, requireAdmin = false }) => {
 
     if (requireAdmin && !isAdmin()) {
         return <Navigate to="/manager" replace />
-    }
-
-    if (syncing) {
-        return (
-            <div style={{
-                minHeight: '100vh',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: '#F5F7FB',
-                color: '#6B7280',
-                fontWeight: 700,
-            }}>
-                Syncing latest cloud data...
-            </div>
-        )
     }
 
     return children
