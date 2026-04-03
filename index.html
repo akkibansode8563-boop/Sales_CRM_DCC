@@ -21,44 +21,8 @@
 
   <title>DCC SalesForce</title>
 
-  <script>
-    // SW version — bump this to force all clients to reload
-    const SW_VERSION = 'v11';
-    const stored = localStorage.getItem('app_sw_version');
-    if (stored !== SW_VERSION) {
-      // Clear old caches silently
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations()
-          .then(regs => regs.forEach(r => r.unregister()))
-          .catch(() => {})
-      }
-      if ('caches' in window) {
-        caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {})
-      }
-      localStorage.setItem('app_sw_version', SW_VERSION)
-      // Only hard-reload if version actually changed (not first visit)
-      if (stored) window.location.reload(true)
-    }
-    // Register SW after page load — don't block initial render
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-          .then(reg => {
-            // Tell waiting SW to activate immediately
-            if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' })
-            reg.addEventListener('updatefound', () => {
-              const newSW = reg.installing
-              newSW?.addEventListener('statechange', () => {
-                if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
-                  newSW.postMessage({ type: 'SKIP_WAITING' })
-                }
-              })
-            })
-          })
-          .catch(() => {})
-      })
-    }
-  </script>
+  <!-- Service Worker is auto-registered by VitePWA (injected at build time) -->
+  <!-- Updates happen silently in background — no manual version bumping needed -->
 
   <!-- Critical CSS inline for instant paint (prevents FOUC) -->
   <style>

@@ -4,6 +4,7 @@ import Login from './pages/Login'
 import ProtectedRoute from './components/ProtectedRoute'
 import AppErrorBoundary from './components/AppErrorBoundary'
 import './App.css'
+import UpdateNotifier from './components/UpdateNotifier'
 
 // Lazy-load heavy pages — only downloaded when user navigates there
 const Register         = lazy(() => import('./pages/Register'))
@@ -33,6 +34,7 @@ function PageLoader() {
 function App() {
   return (
     <Router>
+      <UpdateNotifier />
       <div className="app">
         <AppErrorBoundary>
           <Suspense fallback={<PageLoader />}>
