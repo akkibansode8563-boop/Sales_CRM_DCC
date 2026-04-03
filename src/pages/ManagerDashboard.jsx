@@ -75,6 +75,9 @@ const getInitialOnlineStatus = () => (typeof navigator !== 'undefined' ? navigat
 const getInitialNotificationPermission = () => (typeof Notification !== 'undefined' ? Notification.permission : 'default')
 const getInitialIntroVisibility = () => {
   try {
+    if (typeof window !== 'undefined' && window.Capacitor) {
+      return false
+    }
     return typeof sessionStorage !== 'undefined' && !sessionStorage.getItem('dcc_intro_shown')
   } catch {
     return false
@@ -1287,7 +1290,13 @@ export default function ManagerDashboard() {
             )}
             {customers.length===0
               ? <div className="empty"><div className="empty-ico">🏪</div><div className="empty-txt">No customers yet.</div><button className="empty-cta" onClick={()=>setShowAddCustomer(true)}>Add First Customer</button></div>
-              : customers.filter(c=>!customerFilter||c.name.toLowerCase().includes(customerFilter.toLowerCase())||c.owner_name?.toLowerCase().includes(customerFilter.toLowerCase())).map(c=>(
+              : customers.filter(c=>{
+                  const needle = customerFilter.toLowerCase()
+                  if (!needle) return true
+                  const customerName = String(c?.name || '').toLowerCase()
+                  const ownerName = String(c?.owner_name || '').toLowerCase()
+                  return customerName.includes(needle) || ownerName.includes(needle)
+                }).map(c=>(
                 <div key={c.id} className="customer-card">
                   <div className="cc-top">
                     <div className="cc-avatar">{c.name?.[0]}</div>

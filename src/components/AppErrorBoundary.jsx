@@ -12,6 +12,14 @@ class AppErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('App render error:', error, errorInfo)
+    try {
+      localStorage.setItem('dcc_last_render_error', JSON.stringify({
+        message: error?.message || 'Unknown render error',
+        stack: error?.stack || '',
+        componentStack: errorInfo?.componentStack || '',
+        capturedAt: new Date().toISOString(),
+      }))
+    } catch {}
   }
 
   handleRetry = () => {

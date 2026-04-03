@@ -20,7 +20,15 @@ export default function Login() {
     try {
       const r = await authLogin(form.username, form.password)
       if (r.success) {
-        login({ id: r.user_id, username: r.username, role: r.role, full_name: r.full_name }, r.token)
+        login({
+          id: r.user_id,
+          username: r.username,
+          role: r.role,
+          full_name: r.full_name,
+          territory: r.territory || '',
+          email: r.email || '',
+          phone: r.phone || '',
+        }, r.token)
         // Audit log — fire and forget
         logLoginEvent(r.user_id, r.username, r.role, 'login').catch(() => {})
         navigate(r.role === 'Admin' ? '/admin' : '/manager')

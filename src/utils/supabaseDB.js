@@ -186,6 +186,9 @@ export async function authLogin(username, password) {
       username: data.username,
       role: data.role,
       full_name: data.full_name,
+      territory: data.territory || '',
+      email: data.email || '',
+      phone: data.phone || '',
       token: generateToken(data)
     }
 
