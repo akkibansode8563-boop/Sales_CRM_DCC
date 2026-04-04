@@ -19,8 +19,9 @@ import {
     getJourneyHistorySync  as getJourneyHistory,
     getAllVisitsAllSync,
     getCustomersSync,
-    getTasksSync
-  } from '../utils/supabaseDB'
+    getTasksSync,
+    refreshSync,
+} from '../utils/supabaseDB'
 import { lazy, Suspense } from 'react'
 import { getStorageMode, isSupabaseConfigured } from '../utils/supabaseClient'
 import { downloadPDFReport, downloadCSVReport } from '../utils/reportGenerator'
@@ -177,7 +178,14 @@ export default function AdminDashboard() {
     productionReset(); reload(); toastMsg('Production reset complete.')
   }
 
-  useEffect(() => { reload() }, [reload])
+  useEffect(() => {
+    // Instant render from local cache
+    reload()
+    // Background cloud sync — fires after first render
+    if (typeof refreshSync === 'function') {
+      refreshSync().then(() => reload()).catch(() => {})
+    }
+  }, [reload])
   useEffect(() => {
     const unsub = subscribeToLiveUpdates(() => { setTimeout(reload, 800) })
     return unsub

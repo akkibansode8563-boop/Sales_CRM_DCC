@@ -2,12 +2,14 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/authStore'
 import { authLogin } from '../utils/supabaseDB'
+import { isSupabaseConfigured } from '../utils/supabaseClient'
 import { logLoginEvent } from '../services/syncService'
 import dccLogo from '../assets/dcc-logo.png'
 import './Login.css'
 
 export default function Login() {
   const navigate = useNavigate()
+  const isCloud = isSupabaseConfigured()
   const { login } = useAuthStore()
   const [form, setForm]     = useState({ username: '', password: '' })
   const [showPwd, setShowPwd] = useState(false)
@@ -114,6 +116,18 @@ export default function Login() {
             </div>
           )}
 
+          {/* Sync mode indicator */}
+          <div style={{
+            display:'flex', alignItems:'center', gap:6, padding:'7px 12px',
+            borderRadius:8, marginBottom:12,
+            background: isCloud ? '#F0FDF4' : '#FFFBEB',
+            border: `1px solid ${isCloud ? '#BBF7D0' : '#FDE68A'}`,
+            fontSize:'0.72rem', fontWeight:600,
+            color: isCloud ? '#059669' : '#D97706',
+          }}>
+            <span style={{width:7,height:7,borderRadius:'50%',background:isCloud?'#10B981':'#F59E0B',display:'inline-block',flexShrink:0}}/>
+            {isCloud ? 'Cloud sync enabled — data syncs across all devices' : 'Local mode — data saved on this device only'}
+          </div>
           <form onSubmit={handleSubmit} className="login-form">
             <div className="lf-field">
               <label className="lf-label">Username</label>

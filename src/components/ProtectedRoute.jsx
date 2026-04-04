@@ -1,49 +1,23 @@
-import { useEffect, useRef } from 'react'
 import { Navigate } from 'react-router-dom'
 import useAuthStore from '../store/authStore'
-import { isSupabaseConfigured } from '../utils/supabaseClient'
-import { syncCloudToLocal } from '../utils/supabaseDB'
 
+/**
+ * ProtectedRoute v3 — instant navigation, zero blocking.
+ * Auth check reads from localStorage (instant).
+ * Cloud sync happens in background on dashboard mount.
+ */
 const ProtectedRoute = ({ children, requireAdmin = false }) => {
-    const { isAuthenticated, isAdmin } = useAuthStore()
-    const hasScheduledSyncRef = useRef(false)
+  const { isAuthenticated, isAdmin } = useAuthStore()
 
-    useEffect(() => {
-        if (!isAuthenticated || !isSupabaseConfigured()) {
-            hasScheduledSyncRef.current = false
-            return undefined
-        }
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />
+  }
 
-        if (hasScheduledSyncRef.current) {
-            return undefined
-        }
+  if (requireAdmin && !isAdmin()) {
+    return <Navigate to="/manager" replace />
+  }
 
-        hasScheduledSyncRef.current = true
-        const scheduleSync = window.requestIdleCallback
-            ? window.requestIdleCallback
-            : (callback) => window.setTimeout(callback, 350)
-        const cancelScheduledSync = window.cancelIdleCallback
-            ? window.cancelIdleCallback
-            : window.clearTimeout
-
-        const taskId = scheduleSync(() => {
-            syncCloudToLocal().catch(() => {})
-        })
-
-        return () => {
-            cancelScheduledSync(taskId)
-        }
-    }, [isAuthenticated])
-
-    if (!isAuthenticated) {
-        return <Navigate to="/login" replace />
-    }
-
-    if (requireAdmin && !isAdmin()) {
-        return <Navigate to="/manager" replace />
-    }
-
-    return children
+  return children
 }
 
 export default ProtectedRoute

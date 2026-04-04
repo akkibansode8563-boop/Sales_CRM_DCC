@@ -29,8 +29,9 @@ import {
     updateCustomer,
     createBrand,
     createProduct,
-    getCurrentStatus
-  } from '../utils/supabaseDB'
+    getCurrentStatus,
+    refreshSync,
+} from '../utils/supabaseDB'
 import JourneyMap from '../components/JourneyMap'
 import AutocompleteInput, {
   QuickAddCustomerModal, QuickAddBrandModal, QuickAddProductModal
@@ -495,7 +496,8 @@ export default function ManagerDashboard() {
   }, [])
 
   useEffect(() => {
-    reload()
+    reload() // instant render from local cache
+    refreshSync().then(() => reload()).catch(() => {}) // background cloud sync
     if (Notification?.permission === 'granted' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then(reg => {
         reg.active?.postMessage({ type: 'SCHEDULE_DAILY_REMINDER', managerName: user?.full_name })
