@@ -498,7 +498,7 @@ export default function ManagerDashboard() {
   useEffect(() => {
     reload() // instant render from local cache
     refreshSync().then(() => reload()).catch(() => {}) // background cloud sync
-    if (Notification?.permission === 'granted' && 'serviceWorker' in navigator) {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then(reg => {
         reg.active?.postMessage({ type: 'SCHEDULE_DAILY_REMINDER', managerName: user?.full_name })
       }).catch(()=>{})
@@ -791,6 +791,44 @@ export default function ManagerDashboard() {
     return <span className={`visit-status-chip ${cls}`}>{s}</span>
   }
 
+  /* -- Quick Check-In -- */
+  const handleQuickCheckIn = async () => {
+    try {
+      toastMsg('Detecting location...', 'info')
+      const pos = await getGPS()
+      let address = 'Quick Check-in Point'
+      if (pos) {
+        try {
+          const resolvedAddress = await reverseGeo(pos.latitude, pos.longitude)
+          if (resolvedAddress) address = resolvedAddress
+        } catch {} // ignore reverse geo failure
+      }
+      const newVisit = {
+        manager_id: user?.id,
+        customer_id: null,
+        client_name: 'Quick Check-in',
+        customer_name: 'Quick Check-in',
+        client_type: 'Other',
+        visit_type: 'Field Visit',
+        visit_date: today,
+        status: 'Completed',
+        notes: '',
+        location: address,
+        latitude: pos?.latitude ?? null,
+        longitude: pos?.longitude ?? null,
+        photo: null,
+        voice_note: null,
+      }
+      const customerId = await ensureVisitCustomer({ ...newVisit, contact_person: '', contact_phone: '' })
+      newVisit.customer_id = customerId
+      await createVisit(newVisit)
+      toastMsg('Quick Check-in logged! ⚡', 'success')
+      reloadVisits()
+    } catch(err) {
+      toastMsg('Failed to log check-in: ' + err.message, 'error')
+    }
+  }
+
   return (
     <div className="mgr-app">
       {/* ── Motivational Intro Screen (shown once per session) ── */}
@@ -1032,6 +1070,7 @@ export default function ManagerDashboard() {
               <div className="qa-row">
                 {[
                   {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>, bg:'#EFF6FF', lbl:'Journey\nMap', fn:()=>setShowMap(true)},
+                  {ico:<span style={{fontSize:'20px'}}>⚡</span>, bg:'#D1FAE5', lbl:'Quick\nCheck-in', fn:handleQuickCheckIn},
                   {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>, bg:'#ECFDF5', lbl:'Log\nVisit', fn:()=>{setVf(initVF());setVisitModal(true)}},
                   {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>, bg:'#FEF3C7', lbl:'Customers', fn:()=>setTab('customers')},
                   {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>, bg:'#FFFBEB', lbl:'Sales\nReport', fn:()=>{setSf(initSF());setSalesModal(true)}},
@@ -1120,7 +1159,10 @@ export default function ManagerDashboard() {
           <div className="tab-pane">
             <div className="tab-hdr">
               <span className="tab-hdr-title">All Visits <span className="tab-hdr-count">({allVisits.length})</span></span>
-              <button className="btn-add" onClick={()=>{setVf(initVF());setVisitModal(true)}}>+ Log Visit</button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className="btn-add" onClick={handleQuickCheckIn} style={{ background: '#10B981', borderColor: '#059669' }}>⚡ Quick Check-In</button>
+                <button className="btn-add" onClick={()=>{setVf(initVF());setVisitModal(true)}}>+ Log Visit</button>
+              </div>
             </div>
             {allVisits.length===0
               ? <div className="empty"><div className="empty-ico">📍</div><div className="empty-txt">No visits logged yet.</div><button className="empty-cta" onClick={()=>setVisitModal(true)}>Log First Visit</button></div>

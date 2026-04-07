@@ -10,7 +10,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from '../utils/supabaseClient'
-import { getOfflineQueue, flushOfflineQueue, queueOfflineAction, syncCloudToLocal } from '../utils/supabaseDB'
+import { getOfflineQueue, flushOfflineQueue, queueOfflineAction, syncCloudToLocal, handleRealtimePayload } from '../utils/supabaseDB'
 
 // ── Listeners ──────────────────────────────────────────────
 let syncInterval    = null
@@ -94,7 +94,10 @@ export function startRealtimeSync(onUpdate) {
       { event: '*', schema: 'public', table },
       async payload => {
         notify({ status: 'realtime', table, event: payload.eventType })
-        try { await syncCloudToLocal(); markSynced('realtime') } catch {}
+        try { 
+          handleRealtimePayload(payload)
+          markSynced('realtime') 
+        } catch {}
         try { onUpdate(payload) } catch {}
       }
     )

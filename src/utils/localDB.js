@@ -143,6 +143,35 @@ export function replaceDB(nextDb) {
   return merged
 }
 
+export function patchTableRecord(tableName, eventType, recordData) {
+  const db = getDB()
+  if (!db[tableName]) db[tableName] = []
+  
+  if (eventType === 'INSERT') {
+    const existing = db[tableName].find(r => r.id === recordData.id)
+    if (!existing) {
+      db[tableName].push(recordData)
+    } else {
+      Object.assign(existing, recordData)
+    }
+  } else if (eventType === 'UPDATE') {
+    const idx = db[tableName].findIndex(r => r.id === recordData.id)
+    if (idx !== -1) {
+      Object.assign(db[tableName][idx], recordData)
+    } else {
+      db[tableName].push(recordData)
+    }
+  } else if (eventType === 'DELETE') {
+    const idx = db[tableName].findIndex(r => r.id === recordData.id)
+    if (idx !== -1) {
+      db[tableName].splice(idx, 1)
+    }
+  }
+  
+  saveDBNow(db)
+  return db
+}
+
 function nextId(arr) { return arr.length>0 ? Math.max(...arr.map(i=>i.id||0))+1 : 1 }
 
 // -------------------------------------------

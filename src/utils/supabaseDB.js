@@ -145,6 +145,18 @@ export async function syncCloudToLocal() {
   } }
 }
 
+export function handleRealtimePayload(payload) {
+  if (!payload || !payload.table || !payload.eventType) return { success: false, message: 'Invalid payload' }
+  const record = payload.new || payload.old
+  if (!record) return { success: false, message: 'No record data' }
+  try {
+    local.patchTableRecord(payload.table, payload.eventType, record)
+    return { success: true }
+  } catch (e) {
+    return { success: false, message: e.message }
+  }
+}
+
 // ---------------------------------------------------------
 // AUTH
 // ---------------------------------------------------------
