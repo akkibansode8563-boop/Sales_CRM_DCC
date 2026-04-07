@@ -498,7 +498,7 @@ export default function ManagerDashboard() {
   useEffect(() => {
     reload() // instant render from local cache
     refreshSync().then(() => reload()).catch(() => {}) // background cloud sync
-    if (Notification?.permission === 'granted' && 'serviceWorker' in navigator) {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then(reg => {
         reg.active?.postMessage({ type: 'SCHEDULE_DAILY_REMINDER', managerName: user?.full_name })
       }).catch(()=>{})
