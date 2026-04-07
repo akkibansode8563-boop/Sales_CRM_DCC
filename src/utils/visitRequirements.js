@@ -7,6 +7,13 @@ export function createVisitDraft() {
     client_type: 'Retailer',
     location: '',
     visit_type: 'Field Visit',
+    interaction_type: 'Meeting',
+    order_value: '',
+    payment_collected: '',
+    check_in_time: new Date().toISOString(),
+    check_out_time: null,
+    distance_from_prev: 0,
+    km_covered: 0,
     status: 'Completed',
     notes: '',
     latitude: null,
@@ -25,6 +32,8 @@ export function validateVisitDraft(draft) {
   if (!(draft.contact_phone || '').trim()) return 'Contact phone is required'
   if (!(draft.client_type || '').trim()) return 'Nature of business is required'
   if (!(draft.location || '').trim()) return 'Address is required'
+  if (!draft.interaction_type) return 'Interaction type is required'
+  if (!(draft.notes || '').trim()) return 'Visit notes are mandatory for structured logging'
   if (draft.latitude == null || draft.longitude == null) return 'GPS location is compulsory'
   if (!draft.photo) return 'Visit photo is mandatory'
   return ''

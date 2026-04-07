@@ -59,7 +59,15 @@ const STATUS_META = {
   'Work From Home': { color:'#6B7280', icon:'🏠' },
 }
 const CLIENT_TYPES = ['Retailer','Distributor','Wholesaler','Dealer','Direct Customer','Other']
-const VISIT_TYPES  = ['Field Visit','Sales Visit','Service Visit','Demo Visit','Follow-up','Other']
+const INTERACTION_TYPES = ['Meeting','Follow-up','Order Discussion','Payment Collection','Complaint','Other']
+const INTERACTION_ICONS = {
+  'Meeting': '🤝',
+  'Follow-up': '📞',
+  'Order Discussion': '📦',
+  'Payment Collection': '💰',
+  'Complaint': '⚠️',
+  'Other': '📍'
+}
 const VISIT_STATUSES = ['Completed','Pending','Not Visited']
 
 const fmt = v => v!=null ? '₹' + Number(v).toLocaleString('en-IN') : '₹0'
@@ -833,35 +841,65 @@ export default function ManagerDashboard() {
   const submitVisit = async () => {
     try {
       const c = await getGPS()
+      const now = new Date().toISOString()
+      
+      // Calculate distance from previous visit or journey start
+      const lastVisit = todayVisits[todayVisits.length - 1]
+      const prevLat = lastVisit ? lastVisit.latitude : journey?.start_latitude
+      const prevLng = lastVisit ? lastVisit.longitude : journey?.start_longitude
+      const currLat = c?.latitude || null
+      const currLng = c?.longitude || null
+      
+      const distFromPrev = (prevLat && currLat) ? calcDistanceKm(prevLat, prevLng, currLat, currLng) : 0
+      const totalKmCurrent = journeyKm + distFromPrev
+
       const draft = {
         ...vf,
-        latitude: c?.latitude ?? null,
-        longitude: c?.longitude ?? null,
+        latitude: currLat,
+        longitude: currLng,
         photo: visitPhoto,
         voice_note: voiceNote,
+        check_out_time: now,
+        distance_from_prev: distFromPrev,
+        km_covered: totalKmCurrent,
       }
       const draftError = validateVisitDraft(draft)
       if (draftError) return toastMsg(draftError,'error')
+      
       const customerId = await ensureVisitCustomer(draft)
-      await createVisit({
-        manager_id:user.id, visit_date:today,
-        customer_id:customerId, client_name:vf.customer_name,
-        customer_name:vf.customer_name, client_type:vf.client_type,
-        location:vf.location, visit_type:vf.visit_type,
-        status:vf.status, notes:vf.notes,
-        latitude:c?.latitude||null, longitude:c?.longitude||null,
-        photo:visitPhoto||null,
-        voice_note:voiceNote||null,
+      const visit = await createVisit({
+        manager_id: user.id, 
+        visit_date: today,
+        customer_id: customerId, 
+        client_name: vf.customer_name,
+        customer_name: vf.customer_name, 
+        client_type: vf.client_type,
+        location: vf.location || 'Location Captured', 
+        visit_type: vf.interaction_type || 'Field Visit',
+        interaction_type: vf.interaction_type,
+        status: 'Completed', 
+        notes: vf.notes,
+        order_value: Number(vf.order_value) || 0,
+        payment_collected: Number(vf.payment_collected) || 0,
+        latitude: currLat, 
+        longitude: currLng,
+        photo: visitPhoto || null,
+        voice_note: voiceNote || null,
+        check_in_time: vf.check_in_time,
+        check_out_time: now,
+        distance_from_prev: distFromPrev,
+        km_covered: totalKmCurrent,
       })
+
       if (vf.follow_up_date) {
         await createTask({
           manager_id: user.id,
           customer_id: customerId,
           visit_id: visit?.id || null,
-          title: `Follow up with ${vf.customer_name}`,
-          description: vf.follow_up_note?.trim() || vf.notes?.trim() || `Planned after ${vf.visit_type.toLowerCase()}`,
+          title: `Follow up: ${vf.interaction_type} w/ ${vf.customer_name}`,
+          description: vf.follow_up_note?.trim() || vf.notes?.trim() || `Planned after ${vf.interaction_type}`,
           status: 'open',
-          priority: vf.visit_type === 'Follow-up' ? 'high' : 'medium',
+          priority: 'medium',
           due_at: new Date(`${vf.follow_up_date}T10:00:00`).toISOString(),
           reminder_at: new Date(`${vf.follow_up_date}T09:00:00`).toISOString(),
           created_by: user.id,
@@ -873,7 +911,7 @@ export default function ManagerDashboard() {
       setVisitPhoto(null); setPhotoPreview(null)
       setVoiceNote(null); setVoiceBlob(null)
       reload()
-      toastMsg('Visit logged ✅')
+      toastMsg('Visit logged & synced ✅')
     } catch (error) {
       toastMsg(error.message || 'Unable to log visit', 'error')
     }
@@ -942,43 +980,6 @@ export default function ManagerDashboard() {
     return <span className={`visit-status-chip ${cls}`}>{s}</span>
   }
 
-  /* -- Quick Check-In -- */
-  const handleQuickCheckIn = async () => {
-    try {
-      toastMsg('Detecting location...', 'info')
-      const pos = await getGPS()
-      let address = 'Quick Check-in Point'
-      if (pos) {
-        try {
-          const resolvedAddress = await reverseGeo(pos.latitude, pos.longitude)
-          if (resolvedAddress) address = resolvedAddress
-        } catch {} // ignore reverse geo failure
-      }
-      const newVisit = {
-        manager_id: user?.id,
-        customer_id: null,
-        client_name: 'Quick Check-in',
-        customer_name: 'Quick Check-in',
-        client_type: 'Other',
-        visit_type: 'Field Visit',
-        visit_date: today,
-        status: 'Completed',
-        notes: '',
-        location: address,
-        latitude: pos?.latitude ?? null,
-        longitude: pos?.longitude ?? null,
-        photo: null,
-        voice_note: null,
-      }
-      const customerId = await ensureVisitCustomer({ ...newVisit, contact_person: '', contact_phone: '' })
-      newVisit.customer_id = customerId
-      await createVisit(newVisit)
-      toastMsg('Quick Check-in logged! ⚡', 'success')
-      reloadVisits()
-    } catch(err) {
-      toastMsg('Failed to log check-in: ' + err.message, 'error')
-    }
-  }
 
   return (
     <div className="mgr-app">
@@ -1228,26 +1229,36 @@ export default function ManagerDashboard() {
               )}
             </div>
 
-            {/* Quick Actions */}
-            <div>
-              <div className="section-row"><span className="section-label">Quick Actions</span></div>
-              <div className="qa-row">
-                {[
-                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>, bg:'#EFF6FF', lbl:'Journey\nMap', fn:()=>setShowMap(true)},
-                  {ico:<span style={{fontSize: 20}}>⚡</span>, bg:'#D1FAE5', lbl:'Quick\nCheck-In', fn:handleQuickCheckIn},
-                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>, bg:'#ECFDF5', lbl:'Log\nVisit', fn:()=>{setVf(initVF());setVisitModal(true)}},
-                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>, bg:'#FEF3C7', lbl:'Customers', fn:()=>setTab('customers')},
-                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>, bg:'#FFFBEB', lbl:'Sales\nReport', fn:()=>{setSf(initSF());setSalesModal(true)}},
-                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>, bg:'#F5F3FF', lbl:'Product\nEntry', fn:()=>{setEditProd(null);setPf(initPF());setProductModal(true)}},
-                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#06B6D4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>, bg:'#ECFEFF', lbl:'Nearby\nVisit', fn:checkNearby},
-                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>, bg:'#DCFCE7', lbl:'Invoice\n/ Quote', fn:()=>setShowInvoiceModal(true)},
-                  {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>, bg:'#FFF7ED', lbl:'Enable\nAlerts', fn:requestNotificationPermission},
-                ].map((a,i)=>(
-                  <div key={i} className="qa-card" onClick={a.fn}>
-                    <div className="qa-ico" style={{background:a.bg}}>{a.ico}</div>
-                    <div className="qa-lbl">{a.lbl}</div>
+            {/* Unified Visit Logging Flow */}
+            <div className="unified-action-panel">
+              <div className="section-row"><span className="section-label">Field Operations</span></div>
+              <div className="uap-main">
+                <button className="uap-primary-btn" onClick={()=>{setVf(initVF());setVisitModal(true)}}>
+                  <div className="uap-btn-ico">📍</div>
+                  <div className="uap-btn-body">
+                    <div className="uap-btn-title">Log New Visit</div>
+                    <div className="uap-btn-desc">Mandatory structured interaction log</div>
                   </div>
-                ))}
+                  <div className="uap-btn-arrow">❯</div>
+                </button>
+                <div className="uap-secondary-row">
+                   <button className="uap-sec-btn" onClick={()=>setShowMap(true)}>
+                     <div className="uap-sec-ico" style={{background:'#EFF6FF'}}>🗺️</div>
+                     <span className="uap-sec-lbl">Live Map</span>
+                   </button>
+                   <button className="uap-sec-btn" onClick={()=>{setSf(initSF());setSalesModal(true)}}>
+                     <div className="uap-sec-ico" style={{background:'#FFFBEB'}}>📊</div>
+                     <span className="uap-sec-lbl">Sales Report</span>
+                   </button>
+                   <button className="uap-sec-btn" onClick={()=>{setEditProd(null);setPf(initPF());setProductModal(true)}}>
+                     <div className="uap-sec-ico" style={{background:'#F5F3FF'}}>📦</div>
+                     <span className="uap-sec-lbl">Products</span>
+                   </button>
+                   <button className="uap-sec-btn" onClick={()=>setShowInvoiceModal(true)}>
+                     <div className="uap-sec-ico" style={{background:'#DCFCE7'}}>📄</div>
+                     <span className="uap-sec-lbl">Quotation</span>
+                   </button>
+                </div>
               </div>
             </div>
 
@@ -1271,42 +1282,48 @@ export default function ManagerDashboard() {
               </div>
             )}
 
-            {/* Today's Stops */}
+            {/* Today's Structured Timeline */}
             {todayVisits.length > 0 && (
-              <div className="stops-card">
+              <div className="timeline-container">
                 <div className="section-row">
-                  <span className="section-label">Today's Route ({todayVisits.length})</span>
-                  <button className="section-link" onClick={()=>setShowMap(true)}>🗺️ Map</button>
+                  <span className="section-label">Visit Timeline ({todayVisits.length})</span>
+                  <button className="section-link" onClick={()=>setShowMap(true)}>🗺️ Route</button>
                 </div>
-                {todayVisits.map((v,i)=>{
-                  const pl=i===0?journey?.start_latitude:todayVisits[i-1]?.latitude
-                  const pn=i===0?journey?.start_longitude:todayVisits[i-1]?.longitude
-                  const dist=(pl&&v.latitude)?calcDistanceKm(pl,pn,v.latitude,v.longitude):null
-                  return (
-                    <div key={v.id} className="stop-row">
-                      <div className="stop-num" style={{background:STOP_COLORS[i%STOP_COLORS.length]}}>{i+1}</div>
-                      <div className="stop-body">
-                        <div className="stop-name">{v.client_name||v.customer_name}</div>
-                        <div className="stop-tags">
-                          <span className="stop-tag" style={{background:'#EFF6FF',color:'#2563EB'}}>{v.client_type}</span>
-                          {v.location && <span className="stop-tag" style={{background:'#F3F4F6',color:'#6B7280'}}>{v.location.split(',')[0]}</span>}
+                <div className="timeline">
+                  {todayVisits.map((v, i) => {
+                    const icon = INTERACTION_ICONS[v.interaction_type] || '📍'
+                    const hasValue = (v.order_value > 0 || v.payment_collected > 0)
+                    return (
+                      <div key={v.id} className="timeline-item">
+                        <div className="timeline-dot" style={{borderColor: STOP_COLORS[i % STOP_COLORS.length]}} />
+                        <div className="timeline-body">
+                          <div className="timeline-hdr">
+                            <div className="timeline-title">{v.client_name || v.customer_name}</div>
+                            <div className="timeline-time">{fmtTime(v.check_in_time || v.created_at)}</div>
+                          </div>
+                          <div className="timeline-meta">
+                            <span className="timeline-badge" style={{background:'#EFF6FF', color:'#2563EB'}}>{icon} {v.interaction_type || 'Field Visit'}</span>
+                            <span className="timeline-badge" style={{background:'#F3F4F6', color:'#6B7280'}}>{v.client_type}</span>
+                          </div>
+                          {v.notes && <div className="timeline-notes">{v.notes}</div>}
+                          
+                          {(hasValue || v.distance_from_prev > 0) && (
+                            <div className="timeline-stats">
+                              {v.order_value > 0 && <div className="timeline-stat">📦 <b>{fmt(v.order_value)}</b></div>}
+                              {v.payment_collected > 0 && <div className="timeline-stat">💰 <b>{fmt(v.payment_collected)}</b></div>}
+                              {v.distance_from_prev > 0 && <div className="timeline-stat">🛣️ <b>{v.distance_from_prev.toFixed(1)} km</b></div>}
+                            </div>
+                          )}
+
+                          <div style={{display:'flex', justifyContent:'flex-end', marginTop: 10, gap: 10}}>
+                             <button onClick={()=>shareVisitOnWhatsApp(v)} style={{background:'#DCFCE7', border:'none', borderRadius:6, padding:'4px 8px', fontSize:'0.7rem', color:'#059669', fontWeight:700}}>WhatsApp ↗</button>
+                          </div>
                         </div>
-                        {dist!=null && <div className="stop-dist-chip">🛣️ {dist.toFixed(1)}km · {calcTravelTime(dist)}</div>}
-                        {v.status && v.status!=='Completed' && <StatusChip s={v.status}/>}
-                        {v.notes && <div className="stop-notes">💬 {v.notes}</div>}
                       </div>
-                      <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
-                        <div className="stop-time">{fmtTime(v.created_at)}</div>
-                        <button onClick={e=>{e.stopPropagation();shareVisitOnWhatsApp(v)}}
-                          style={{background:'#ECFDF5',border:'1px solid #6EE7B7',borderRadius:6,
-                            padding:'2px 7px',fontSize:'0.6rem',fontWeight:700,color:'#059669',cursor:'pointer'}}>
-                          &#x1F4AC; WA
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-                {journeyKm>0 && (
+                    )
+                  })}
+                </div>
+                {journeyKm > 0 && (
                   <div className="stops-summary">
                     <div className="ss-item"><div className="ss-val">{todayVisits.length}</div><div className="ss-lbl">Stops</div></div>
                     <div className="ss-item"><div className="ss-val">{journeyKm.toFixed(1)} km</div><div className="ss-lbl">Distance</div></div>
@@ -1324,8 +1341,7 @@ export default function ManagerDashboard() {
             <div className="tab-hdr">
               <span className="tab-hdr-title">All Visits <span className="tab-hdr-count">({allVisits.length})</span></span>
               <div style={{display:'flex', gap: 6}}>
-                <button className="btn-add" onClick={handleQuickCheckIn} style={{background: '#10B981', color: 'white', padding: '6px 10px'}}>⚡ Quick</button>
-                <button className="btn-add" onClick={()=>{setVf(initVF());setVisitModal(true)}}>+ Visit</button>
+                <button className="btn-add" onClick={()=>{setVf(initVF());setVisitModal(true)}}>+ New Visit</button>
               </div>
             </div>
             {allVisits.length===0
@@ -1710,21 +1726,25 @@ export default function ManagerDashboard() {
           onVisitLogged={onVisitLogged} onClose={()=>{setShowMap(false);reload()}} onRefresh={forceCloudJourneySync}/>
       )}
 
-      {/* ---- VISIT MODAL — with Smart Autocomplete ---- */}
+      {/* ---- VISIT MODAL — Protected Workflow ---- */}
       {visitModal && (
-        <div className="modal-overlay" onClick={()=>setVisitModal(false)}>
+        <div className="modal-overlay" onClick={()=>{if(!vf.notes.trim()) { toastMsg('Please save notes before closing','info'); return } setVisitModal(false)}}>
           <div className="modal" onClick={e=>e.stopPropagation()}>
-            <div className="modal-hdr"><div className="modal-title">📍 Log Client Visit</div><button className="modal-close" onClick={()=>setVisitModal(false)}>✕</button></div>
+            <div className="modal-hdr">
+              <div className="modal-title">📍 Structured Visit Log</div>
+              <button className="modal-close" onClick={()=>setVisitModal(false)}>✕</button>
+            </div>
             <div className="modal-body">
+              <div className="modal-note">🔍 Mandatory Log: Auto-capturing GPS & Time for compliance.</div>
 
-              {/* -- Customer Autocomplete -- */}
+              {/* -- Customer Choice -- */}
               <div className="fg">
-                <label>Customer Name *</label>
+                <label>Target Customer *</label>
                 <AutocompleteInput
                   value={vf.customer_name}
                   onChange={handleVisitCustomerChange}
                   onSelect={c => c && applyCustomerToVisitForm(c)}
-                  placeholder="Search customer or type new name…"
+                  placeholder="Select customer from list…"
                   searchFn={smartSearchCustomers}
                   recentsFn={getRecentCustomers}
                   renderItem={c => <span className="ac-item-name">{c.name}</span>}
@@ -1735,120 +1755,102 @@ export default function ManagerDashboard() {
                 />
               </div>
 
-              <div className="row-2">
-                <div className="fg">
-                  <label>Nature of Business *</label>
-                  <select value={vf.client_type} onChange={e=>setVf(p=>({...p,client_type:e.target.value}))}>
-                    {CLIENT_TYPES.map(t=><option key={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div className="fg">
-                  <label>Visit Status</label>
-                  <select value={vf.status} onChange={e=>setVf(p=>({...p,status:e.target.value}))}>
-                    {VISIT_STATUSES.map(s=><option key={s}>{s}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="row-2">
-                <div className="fg">
-                  <label>Contact Person *</label>
-                  <input value={vf.contact_person} onChange={e=>setVf(p=>({...p,contact_person:e.target.value}))} placeholder="Owner / Contact person"/>
-                </div>
-                <div className="fg">
-                  <label>Contact Phone *</label>
-                  <input value={vf.contact_phone} onChange={e=>setVf(p=>({...p,contact_phone:e.target.value}))} placeholder="+91 9876543210"/>
-                </div>
-              </div>
-
+              {/* -- Key Mandatory Fields -- */}
               <div className="fg">
-                <label>Visit Type</label>
-                <select value={vf.visit_type} onChange={e=>setVf(p=>({...p,visit_type:e.target.value}))}>
-                  {VISIT_TYPES.map(t=><option key={t}>{t}</option>)}
+                <label>Interaction Type *</label>
+                <select value={vf.interaction_type} onChange={e=>setVf(p=>({...p,interaction_type:e.target.value}))}>
+                  {INTERACTION_TYPES.map(t=><option key={t}>{t}</option>)}
                 </select>
               </div>
 
               <div className="fg">
-                <label>Location / Address *</label>
-                <input value={vf.location} onChange={e=>setVf(p=>({...p,location:e.target.value}))} placeholder="Area, City or full address"/>
+                <label>Visit Notes / Outcome *</label>
+                <textarea 
+                  value={vf.notes} 
+                  onChange={e=>setVf(p=>({...p,notes:e.target.value}))} 
+                  placeholder="Mandatory: What happened during the visit?" 
+                  rows={4}
+                  style={{border: !vf.notes.trim() ? '1.5px solid #FCA5A5' : ''}}
+                />
               </div>
 
-              <div className="fg">
-                <label>Notes / Visit Outcome</label>
-                <textarea value={vf.notes} onChange={e=>setVf(p=>({...p,notes:e.target.value}))} placeholder="Orders placed, discussions, follow-ups…" rows={3}/>
-              </div>
-
+              {/* -- Optional Value Capture -- */}
               <div className="row-2">
                 <div className="fg">
-                  <label>Next Follow-up Date</label>
-                  <input type="date" value={vf.follow_up_date} min={today} onChange={e=>setVf(p=>({...p,follow_up_date:e.target.value}))}/>
+                  <label>Order Value (₹)</label>
+                  <input type="number" value={vf.order_value} onChange={e=>setVf(p=>({...p,order_value:e.target.value}))} placeholder="0"/>
                 </div>
                 <div className="fg">
-                  <label>Follow-up Note</label>
-                  <input value={vf.follow_up_note} onChange={e=>setVf(p=>({...p,follow_up_note:e.target.value}))} placeholder="Payment reminder, quotation, callback…"/>
+                  <label>Payment Collected (₹)</label>
+                  <input type="number" value={vf.payment_collected} onChange={e=>setVf(p=>({...p,payment_collected:e.target.value}))} placeholder="0"/>
                 </div>
               </div>
 
-              {/* -- Photo Capture -- */}
-              <div className="fg">
-                <label>Visit Photo *</label>
-                {photoPreview ? (
-                  <div style={{position:'relative',borderRadius:10,overflow:'hidden',border:'1.5px solid #E5E7EB'}}>
-                    <img src={photoPreview} alt="Visit" style={{width:'100%',height:160,objectFit:'cover',display:'block'}}/>
-                    <button onClick={()=>{setVisitPhoto(null);setPhotoPreview(null)}}
-                      style={{position:'absolute',top:6,right:6,background:'rgba(0,0,0,0.6)',border:'none',
-                        borderRadius:'50%',width:26,height:26,color:'#fff',cursor:'pointer',fontSize:'0.75rem',
-                        display:'flex',alignItems:'center',justifyContent:'center'}}>&#x2715;</button>
-                  </div>
-                ) : (
-                  <button onClick={capturePhotoCompressed}
-                    style={{width:'100%',padding:'12px',border:'1.5px dashed #D1D5DB',borderRadius:10,
-                      background:'#F9FAFB',color:'#374151',cursor:'pointer',display:'flex',
-                      alignItems:'center',justifyContent:'center',gap:8,fontSize:'0.82rem',fontWeight:600}}>
-                    <span style={{fontSize:'1.2rem'}}>&#x1F4F7;</span> Take Photo / Upload
-                  </button>
-                )}
+              <div className="modal-section-lbl">Client Contact Info</div>
+              <div className="row-2">
+                <div className="fg">
+                  <label>Person</label>
+                  <input value={vf.contact_person} onChange={e=>setVf(p=>({...p,contact_person:e.target.value}))} placeholder="Name"/>
+                </div>
+                <div className="fg">
+                  <label>Phone</label>
+                  <input value={vf.contact_phone} onChange={e=>setVf(p=>({...p,contact_phone:e.target.value}))} placeholder="Number"/>
+                </div>
               </div>
 
-              {/* -- Voice Note -- */}
               <div className="fg">
-                <label>Voice Note <span style={{fontWeight:400,color:'#9CA3AF'}}>(optional, max 60s)</span></label>
-                {voiceNote ? (
-                  <div style={{display:'flex',alignItems:'center',gap:8,padding:'10px 12px',
-                    background:'#F0FDF4',border:'1.5px solid #6EE7B7',borderRadius:10}}>
-                    <span style={{fontSize:'1.1rem'}}>&#x1F3A4;</span>
-                    <audio controls src={voiceNote} style={{flex:1,height:32}}/>
-                    <button onClick={clearVoiceNote}
-                      style={{background:'none',border:'none',cursor:'pointer',color:'#9CA3AF',fontSize:'1rem'}}>&#x2715;</button>
-                  </div>
-                ) : isRecording ? (
-                  <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',
-                    background:'#FEF2F2',border:'1.5px solid #FECACA',borderRadius:10}}>
-                    <span style={{width:8,height:8,borderRadius:'50%',background:'#EF4444',
-                      animation:'pulse 1s infinite',display:'inline-block'}}/>
-                    <span style={{fontSize:'0.82rem',fontWeight:700,color:'#DC2626',flex:1}}>
-                      Recording... {recordingTime}s
-                    </span>
-                    <button onClick={stopRecording}
-                      style={{background:'#EF4444',border:'none',borderRadius:7,padding:'6px 14px',
-                        color:'#fff',fontWeight:700,fontSize:'0.78rem',cursor:'pointer'}}>
-                      Stop
+                <label>Planned Follow-up</label>
+                <div className="row-2">
+                  <input type="date" value={vf.follow_up_date} min={today} onChange={e=>setVf(p=>({...p,follow_up_date:e.target.value}))}/>
+                  <input value={vf.follow_up_note} onChange={e=>setVf(p=>({...p,follow_up_note:e.target.value}))} placeholder="Follow-up note…"/>
+                </div>
+              </div>
+
+              {/* -- Visual Evidence -- */}
+              <div className="row-2">
+                <div className="fg">
+                  <label>Visit Photo *</label>
+                  {photoPreview ? (
+                    <div style={{position:'relative',borderRadius:10,overflow:'hidden',border:'1.5px solid #E5E7EB'}}>
+                      <img src={photoPreview} alt="Visit" style={{width:'100%',height:100,objectFit:'cover'}}/>
+                      <button onClick={()=>{setVisitPhoto(null);setPhotoPreview(null)}}
+                        style={{position:'absolute',top:4,right:4,background:'rgba(0,0,0,0.6)',border:'none',borderRadius:'50%',width:22,height:22,color:'#fff'}}>✕</button>
+                    </div>
+                  ) : (
+                    <button onClick={capturePhotoCompressed} className="mgr-icon-btn" style={{width:'100%',height:100,flexDirection:'column',gap:4,borderRadius:10}}>
+                      <span style={{fontSize:'1.4rem'}}>📷</span>
+                      <span style={{fontSize:'0.65rem',fontWeight:700}}>Capture</span>
                     </button>
-                  </div>
-                ) : (
-                  <button onClick={startRecording}
-                    style={{width:'100%',padding:'12px',border:'1.5px dashed #D1D5DB',borderRadius:10,
-                      background:'#F9FAFB',color:'#374151',cursor:'pointer',display:'flex',
-                      alignItems:'center',justifyContent:'center',gap:8,fontSize:'0.82rem',fontWeight:600}}>
-                    <span style={{fontSize:'1.2rem'}}>&#x1F3A4;</span> Record Voice Note
-                  </button>
-                )}
+                  )}
+                </div>
+                <div className="fg">
+                  <label>Voice Note</label>
+                  {voiceNote ? (
+                    <div style={{height:100,display:'flex',flexDirection:'column',justifyContent:'center',gap:6,padding:10,background:'#F0FDF4',borderRadius:10,border:'1px solid #6EE7B7'}}>
+                       <audio src={voiceNote} controls style={{width:'100%',height:24}}/>
+                       <button onClick={clearVoiceNote} style={{fontSize:'0.65rem',color:'#059669',background:'none',border:'none',textDecoration:'underline'}}>Remove</button>
+                    </div>
+                  ) : (
+                    <button onClick={isRecording?stopRecording:startRecording} className="mgr-icon-btn" 
+                       style={{width:'100%',height:100,flexDirection:'column',gap:4,borderRadius:10, background: isRecording ? '#FEF2F2' : ''}}>
+                      <span style={{fontSize:'1.4rem', animation: isRecording ? 'pulse 1s infinite' : 'none'}}>{isRecording?'⏹️':'🎤'}</span>
+                      <span style={{fontSize:'0.65rem',fontWeight:700}}>{isRecording?`${recordingTime}s`:'Record'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="modal-info-box" style={{background:'#F9FAFB', borderColor:'#E5E7EB'}}>
+                <div style={{fontSize:'0.75rem', color:'#6B7280', display:'flex', flexDirection:'column', gap:2}}>
+                  <span>📍 GPS: {vf.latitude||'Auto-capturing'}...</span>
+                  <span>⏰ Start: {fmtTime(vf.check_in_time)}</span>
+                </div>
               </div>
 
             </div>
             <div className="modal-foot">
-              <button className="btn-cancel" onClick={()=>{setVisitModal(false);setVisitPhoto(null);setPhotoPreview(null);setVoiceNote(null)}}>Cancel</button>
-              <button className="btn-submit" onClick={submitVisit}>Log Visit</button>
+              <button className="btn-cancel" onClick={()=>setVisitModal(false)}>Discard</button>
+              <button className="btn-submit" onClick={submitVisit}>Log Stop & Sync</button>
             </div>
           </div>
         </div>

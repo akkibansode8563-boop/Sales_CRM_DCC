@@ -1109,3 +1109,55 @@
     gap: 12px;
   }
 }
+
+/* Visit Interaction Badges & Financials */
+.mfc-visit-type-badge {
+  font-size: 0.58rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.ddv-type-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ddv-financials {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ddv-fin-chip {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  background: #EFF6FF;
+  color: #2563EB;
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,0.05);
+}
+
+.ddv-fin-chip b {
+  font-family: var(--font-mono);
+  margin-left: 2px;
+}
+
+.ddv-notes {
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: #F9FAFB;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  color: #4B5563;
+  line-height: 1.4;
+  border-left: 3px solid #E5E7EB;
+}

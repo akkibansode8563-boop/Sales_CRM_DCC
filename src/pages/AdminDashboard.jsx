@@ -56,6 +56,14 @@ const STATUS_META = {
   'Meeting':        { color:'#EC4899', bg:'#FDF2F8' },
   'Work From Home': { color:'#6B7280', bg:'#F3F4F6' },
 }
+const INTERACTION_COLORS = {
+  'Meeting': { color:'#2563EB', bg:'#EFF6FF', icon:'🤝' },
+  'Follow-up': { color:'#7C3AED', bg:'#F5F3FF', icon:'📞' },
+  'Order Discussion': { color:'#10B981', bg:'#ECFDF5', icon:'📝' },
+  'Payment Collection': { color:'#D97706', bg:'#FFFBEB', icon:'💰' },
+  'Complaint': { color:'#DC2626', bg:'#FEF2F2', icon:'⚠️' },
+  'Other': { color:'#6B7280', bg:'#F9FAFB', icon:'📍' },
+}
 const AVATAR_COLORS = ['#2563EB','#10B981','#F59E0B','#EF4444','#7C3AED','#EC4899','#06B6D4','#F97316','#8B5CF6','#84CC16']
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -901,15 +909,28 @@ useEffect(() => {
                                 <div key={v.id} className="mfc-visit-row">
                                   <span className="mfc-visit-num" style={{background:AVATAR_COLORS[i%AVATAR_COLORS.length]}}>{v.visit_number || i+1}</span>
                                   <div className="mfc-visit-body">
-                                    <div className="mfc-visit-name">{v.client_name||v.customer_name}</div>
+                                    <div style={{display:'flex', alignItems:'center', gap:6}}>
+                                      <div className="mfc-visit-name">{v.client_name||v.customer_name}</div>
+                                      {v.interaction_type && (
+                                        <span 
+                                          className="mfc-visit-type-badge"
+                                          style={{
+                                            background: INTERACTION_COLORS[v.interaction_type]?.bg || '#F3F4F6',
+                                            color: INTERACTION_COLORS[v.interaction_type]?.color || '#6B7280'
+                                          }}
+                                        >
+                                          {INTERACTION_COLORS[v.interaction_type]?.icon} {v.interaction_type}
+                                        </span>
+                                      )}
+                                    </div>
                                     <div className="mfc-visit-meta">
                                       {`Visit ${v.visit_number || i+1}`}
                                       {v.client_type ? ` • ${v.client_type}` : ''}
                                       {v.location ? ` • ${v.location?.split(',')[0]}` : ''}
-                                      {v.customer_details ? ` • ${v.customer_details}` : ''}
+                                      {(v.order_value > 0) && ` • ${fmt(v.order_value)}`}
                                     </div>
                                   </div>
-                                  <span className="mfc-visit-time">{fmtTime(v.created_at)}</span>
+                                  <span className="mfc-visit-time">{fmtTime(v.check_in_time || v.created_at)}</span>
                                 </div>
                               ))}
                               {(m.dayVisits || []).length > 3 && <div className="mfc-more">+{(m.dayVisits || []).length-3} more visits</div>}
@@ -1060,16 +1081,35 @@ useEffect(() => {
                               <div key={v.id} className="dd-visit-row">
                                 <div className="ddv-num" style={{background:AVATAR_COLORS[i%AVATAR_COLORS.length]}}>{v.visit_number || i+1}</div>
                                 <div className="ddv-body">
-                                  <div className="ddv-name">{`Visit ${v.visit_number || i+1} • ${v.client_name||v.customer_name}`}</div>
+                                  <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:4}}>
+                                    <div className="ddv-name">{`Visit ${v.visit_number || i+1} • ${v.client_name||v.customer_name}`}</div>
+                                    {v.interaction_type && (
+                                      <span 
+                                        className="ddv-type-badge"
+                                        style={{
+                                          background: INTERACTION_COLORS[v.interaction_type]?.bg || '#F3F4F6',
+                                          color: INTERACTION_COLORS[v.interaction_type]?.color || '#6B7280'
+                                        }}
+                                      >
+                                        {INTERACTION_COLORS[v.interaction_type]?.icon} {v.interaction_type}
+                                      </span>
+                                    )}
+                                  </div>
                                   <div className="ddv-meta">
                                     <span className="ddv-tag">{v.client_type}</span>
                                     <span>{v.location?.split(',')[0]}</span>
                                     {v.customer_details && <span>{v.customer_details}</span>}
+                                    {v.distance_from_prev > 0 && <span style={{color:'#7C3AED', fontWeight:700}}> • 🛣️ {v.distance_from_prev.toFixed(1)} km</span>}
                                   </div>
                                   {v.notes && <div className="ddv-notes">{v.notes}</div>}
-                                  <div className="ddv-type">{v.visit_type}</div>
+                                  {(v.order_value > 0 || v.payment_collected > 0) && (
+                                    <div className="ddv-financials">
+                                      {v.order_value > 0 && <span className="ddv-fin-chip">📦 Order: <b>{fmt(v.order_value)}</b></span>}
+                                      {v.payment_collected > 0 && <span className="ddv-fin-chip" style={{background:'#ECFDF5', color:'#059669'}}>💰 Payment: <b>{fmt(v.payment_collected)}</b></span>}
+                                    </div>
+                                  )}
                                 </div>
-                                <div className="ddv-time">{fmtTime(v.created_at)}</div>
+                                <div className="ddv-time">{fmtTime(v.check_in_time || v.created_at)}</div>
                               </div>
                             ))
                           }
