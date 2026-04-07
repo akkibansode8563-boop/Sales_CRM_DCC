@@ -951,7 +951,7 @@ export function getJourneyReplayData(journey_id) {
 // -------------------------------------------
 // ANALYTICS — Weekly / Monthly / Yearly
 // -------------------------------------------
-export function getAnalytics(manager_id=null, period='month', refDate=null) {
+export function getAnalytics(manager_id=null, period='month', refDate=null, startDate=null, endDate=null) {
   const db = getDB()
   const ref = refDate ? new Date(refDate) : new Date()
   const managers = manager_id
@@ -972,6 +972,9 @@ export function getAnalytics(manager_id=null, period='month', refDate=null) {
   } else if (period === 'year') {
     dateFrom = ref.getFullYear() + '-01-01'
     dateTo   = ref.getFullYear() + '-12-31'
+  } else if (period === 'custom' && startDate && endDate) {
+    dateFrom = startDate
+    dateTo   = endDate
   }
 
   const allVisits = db.visits.filter(v => v.visit_date >= dateFrom && v.visit_date <= dateTo)

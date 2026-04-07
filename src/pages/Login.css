@@ -75,17 +75,18 @@
   display: none;
 }
 .lf-company-logo-circle {
-  width: 96px;
-  height: 96px;
+  width: 140px;
+  height: 140px;
   border-radius: 50%;
   background: #fff;
-  border: 2px solid #CBD5E1;
-  box-shadow: 0 4px 16px rgba(37,99,235,0.12), 0 1px 3px rgba(0,0,0,0.08);
+  border: 4px solid #F1F5F9;
+  box-shadow: 0 12px 32px rgba(37,99,235,0.15), 0 4px 8px rgba(0,0,0,0.05);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px;
+  padding: 18px;
   overflow: hidden;
+  animation: scaleIn 0.6s var(--ease) both;
 }
 .lf-company-logo-img {
   width: 100%;
@@ -141,15 +142,7 @@
 }
 .login-cta:hover:not(:disabled) { background: var(--primary-dark); transform: translateY(-1px) !important; box-shadow: 0 8px 24px rgba(37,99,235,0.35); }
 .login-cta:disabled { opacity: 0.6; cursor: not-allowed; }
-.login-spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
-
-  display: flex; align-items: center; gap: 11px;
-  background: var(--surface-2); border: 1.5px solid var(--border);
-  border-radius: var(--r-md); padding: 10px 13px;
-  cursor: pointer; text-align: left; font-family: var(--font);
-  transition: all var(--t-fast) var(--ease); transform: none !important; box-shadow: none !important;
-}
-
+/* -- Footer -- */
 .lf-footer { margin-top: 24px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 0.7rem; color: var(--text-4); animation: fadeUp 0.4s 0.45s var(--ease) both; }
 .lf-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
 

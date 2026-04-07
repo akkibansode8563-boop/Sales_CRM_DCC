@@ -107,10 +107,17 @@ export default function AdminDashboard() {
   const [analyticsDate,   setAnalyticsDate]   = useState(new Date().toISOString().split('T')[0])
   const [analyticsData,   setAnalyticsData]   = useState(null)
   const [analyticsMgrId,  setAnalyticsMgrId]  = useState(null)
+  const [customStartDate, setCustomStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().split('T')[0])
+  const [customEndDate,   setCustomEndDate]   = useState(new Date().toISOString().split('T')[0])
   const [alerts,          setAlerts]          = useState([])
+  const [filterStartDate, setFilterStartDate] = useState(today)
+  const [filterEndDate,   setFilterEndDate]   = useState(today)
+  const [useFilterRange,  setUseFilterRange]  = useState(false)
   const [alertsOpen,      setAlertsOpen]      = useState(false)
   const [alertsDismissed, setAlertsDismissed] = useState(false)
   const [leaderPeriod,    setLeaderPeriod]    = useState('month')
+  const [leaderStartDate, setLeaderStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().split('T')[0])
+  const [leaderEndDate,   setLeaderEndDate]   = useState(new Date().toISOString().split('T')[0])
   const [aiMgrId,         setAiMgrId]         = useState(null)
   const [overviewChartType, setOverviewChartType] = useState('sales')
   const [allCustomers,    setAllCustomers]    = useState([])
@@ -166,11 +173,13 @@ export default function AdminDashboard() {
     }
   }
 
-  const loadAnalytics = useCallback((period, date, mgrId=null) => {
-    try { setAnalyticsData(getAnalytics(mgrId, period, date) || null) }
+  const loadAnalytics = useCallback((period, date, mgrId=null, cStart=null, cEnd=null) => {
+    try { setAnalyticsData(getAnalytics(mgrId, period, date, cStart, cEnd) || null) }
     catch(e) { console.error('getAnalytics', e); setAnalyticsData(null) }
   }, [])
-  useEffect(() => { loadAnalytics(analyticsPeriod, analyticsDate, analyticsMgrId) }, [analyticsPeriod, analyticsDate, analyticsMgrId, loadAnalytics])
+  useEffect(() => { 
+    loadAnalytics(analyticsPeriod, analyticsDate, analyticsMgrId, customStartDate, customEndDate) 
+  }, [analyticsPeriod, analyticsDate, analyticsMgrId, customStartDate, customEndDate, loadAnalytics])
 
   useEffect(() => {
     const loadAlerts = () => {
@@ -341,9 +350,12 @@ export default function AdminDashboard() {
 
   const salesManagers    = Array.isArray(users)    ? users.filter(u=>u.role==='Sales Manager') : []
   const onField          = Array.isArray(managers) ? managers.filter(m=>m.status==='On Field').length : 0
-  const totalVisitsToday = Array.isArray(managers) ? managers.reduce((s,m)=>s+(m.visits_today||0),0) : 0
   const activeJourneys   = Array.isArray(managers) ? managers.filter(m=>m.active_journey).length : 0
-  const totalSalesToday  = Array.isArray(managers) ? managers.reduce((s,m)=>s+(m.today_sales||0),0) : 0
+  
+  // Period-based KPIs (from filtered managerRows)
+  const totalVisitsPeriod = (managerRows || []).reduce((s,m)=>s+(m.dayVisits?.length||0),0)
+  const totalSalesPeriod  = (managerRows || []).reduce((s,m)=>s+(m.dayReport?.sales_achievement||0),0)
+  const totalTasksPeriod  = taskSummary.overdueTasks.length
   const customersById = useMemo(() => new Map((allCustomers || []).map(c => [c.id, c])), [allCustomers])
   const taskSummary = useMemo(() => {
     const openTasks = (allTasks || []).filter(task => task.status !== 'completed' && !task.deleted_at)
@@ -379,23 +391,50 @@ export default function AdminDashboard() {
     ].filter(Boolean).join(' • ')
   }, [customersById])
 
-  const buildManagerData = useCallback((date=today) => {
+  const buildManagerData = useCallback((dateOrRange='today') => {
     return salesManagers.map((m,i) => {
       const mVisits = visitsByManager.get(m.id) || []
-      const dayVisits = mVisits
-        .filter(v=>v.visit_date===date)
-        .map((visit, index) => ({
+      
+      let filteredVisits = []
+      if (useFilterRange) {
+        filteredVisits = mVisits.filter(v => v.visit_date >= filterStartDate && v.visit_date <= filterEndDate)
+      } else {
+        filteredVisits = mVisits.filter(v => v.visit_date === dateOrRange)
+      }
+
+      const dayVisits = filteredVisits.map((visit, index) => ({
           ...visit,
           visit_number: index + 1,
           customer_details: getVisitCustomerDetails(visit),
         }))
+      
       const reports = getDailySalesReports(m.id) || []
-      const dayReport   = reports.find(r=>r.date===date)
-     const allProds = getProductDayEntries(m.id) || []
-      const dayProducts = allProds.filter(p=>p.date===date)
+      let dayReport = null
+      if (useFilterRange) {
+        // Aggregate for range or just pick last?
+        // Usually reports are per-day. For range, we sum sales.
+        const rangeReports = reports.filter(r => r.date >= filterStartDate && r.date <= filterEndDate)
+        if (rangeReports.length > 0) {
+          dayReport = {
+            sales_achievement: rangeReports.reduce((s,r) => s + (r.sales_achievement || 0), 0),
+            profit_achievement: rangeReports.reduce((s,r) => s + (r.profit_achievement || 0), 0),
+            // ... other fields?
+            date: `${filterStartDate} to ${filterEndDate}`
+          }
+        }
+      } else {
+        dayReport = reports.find(r=>r.date===dateOrRange)
+      }
+
+      const allProds = getProductDayEntries(m.id) || []
+      const dayProducts = useFilterRange 
+        ? allProds.filter(p => p.date >= filterStartDate && p.date <= filterEndDate)
+        : allProds.filter(p=>p.date===dateOrRange)
+
       const managerTasks = taskSummary.tasksByManager.get(m.id) || []
       const targets = getTargets(m.id) || []
-      const monthTarget = targets.find(t=>t.month===new Date(date).getMonth()+1&&t.year===new Date(date).getFullYear())
+      const refDate = useFilterRange ? filterEndDate : dateOrRange
+      const monthTarget = targets.find(t=>t.month===new Date(refDate).getMonth()+1&&t.year===new Date(refDate).getFullYear())
                        || targets.sort((a,b)=>b.year-a.year||b.month-a.month)[0]
       const journeys = getJourneyHistory(m.id) || []
       const liveData = managers.find(mg => mg.id === m.id) || {}
@@ -413,7 +452,7 @@ export default function AdminDashboard() {
         allVisitsCount: mVisits.length, totalReports: reports.length, totalProducts: allProds.length,
       }
     })
-  }, [getVisitCustomerDetails, managers, salesManagers, taskSummary.tasksByManager, today, visitsByManager])
+  }, [getVisitCustomerDetails, managers, salesManagers, taskSummary.tasksByManager, today, visitsByManager, useFilterRange, filterStartDate, filterEndDate])
 const [managerRows, setManagerRows] = useState([])
 useEffect(() => {
   if (!salesManagers || salesManagers.length === 0) {
@@ -428,7 +467,7 @@ useEffect(() => {
     console.error("ManagerRows Error:", err)
     setManagerRows([])
   }
-}, [salesManagers, filterDate, buildManagerData])
+}, [salesManagers, filterDate, buildManagerData, useFilterRange, filterStartDate, filterEndDate])
   const drillData   = useMemo(() => drillManager ? buildManagerData(drillDate).find(m=>m.id===drillManager.id) : null, [buildManagerData, drillDate, drillManager])
 
   // Pre-computed — avoids IIFE patterns inside JSX which break esbuild's JSX parser
@@ -460,9 +499,9 @@ useEffect(() => {
   }))
 }, [managerRows])
   const leaderboardData = useMemo(() => {
-    const a = getAnalytics(null, leaderPeriod, filterDate)
+    const a = getAnalytics(null, leaderPeriod, filterDate, leaderStartDate, leaderEndDate)
     return a ? a.managerStats : []
-  }, [leaderPeriod, filterDate])
+  }, [leaderPeriod, filterDate, leaderStartDate, leaderEndDate])
 
   const openDrilldown = (mgr) => {
     setDrillManager(mgr); setDrillDate(filterDate); setTab('drilldown'); setSidebarOpen(false)
@@ -473,9 +512,9 @@ useEffect(() => {
       {[
         { n:salesManagers.length, l:'Total Managers', ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>, bg:'#EFF6FF', tc:'#2563EB', pill:users.length + ' total users' },
         { n:onField,              l:'On Field Now',   ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>, bg:'#ECFDF5', tc:'#059669', pill:onField>0?'Active':'None' },
-        { n:totalVisitsToday,     l:'Visits Today',   ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>, bg:'#FFFBEB', tc:'#D97706', pill:activeJourneys + ' live routes' },
-        { n:fmt(totalSalesToday), l:'Sales Today',    ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>, bg:'#F5F3FF', tc:'#7C3AED', pill:'all managers' },
-        { n:taskSummary.overdueTasks.length, l:'Overdue Tasks', ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></svg>, bg:'#FEF2F2', tc:'#DC2626', pill:taskSummary.openTasks.length + ' open tasks' },
+        { n:totalVisitsPeriod,    l:useFilterRange?'Visits in Range':'Visits Today', ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>, bg:'#FFFBEB', tc:'#D97706', pill:activeJourneys + ' live routes' },
+        { n:fmt(totalSalesPeriod),l:useFilterRange?'Sales in Range':'Sales Today',  ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>, bg:'#F5F3FF', tc:'#7C3AED', pill:'all managers' },
+        { n:totalTasksPeriod, l:'Overdue Tasks', ico:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></svg>, bg:'#FEF2F2', tc:'#DC2626', pill:taskSummary.openTasks.length + ' open tasks' },
       ].map((k,i) => (
         <div key={i} className="akpi">
           <div className="akpi-top">
@@ -639,10 +678,24 @@ useEffect(() => {
             <div className="atb-sub">{new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})} · Last sync {syncLabel}</div>
           </div>
           <div className="atb-right">
-            {(tab==='overview'||tab==='managers') && (
-              <div className="atb-date-wrap">
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="1" y="2" width="11" height="10" rx="2" stroke="currentColor" strokeWidth="1.3"/><path d="M4 1v2M9 1v2M1 5h11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
-                <input type="date" value={filterDate} onChange={e=>setFilterDate(e.target.value)} className="atb-date"/>
+            {(tab==='overview'||tab==='managers'||tab==='heatmap'||tab==='drilldown') && (
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <div style={{display:'flex',background:'#F3F4F6',borderRadius:10,padding:2,gap:2}}>
+                  <button onClick={()=>setUseFilterRange(false)} style={{padding:'4px 10px',borderRadius:8,fontSize:'0.65rem',fontWeight:700,border:'none',cursor:'pointer',background:!useFilterRange?'#fff':'transparent',color:!useFilterRange?'#111827':'#6B7280',boxShadow:!useFilterRange?'0 1px 3px rgba(0,0,0,0.1)':'none'}}>Single</button>
+                  <button onClick={()=>setUseFilterRange(true)} style={{padding:'4px 10px',borderRadius:8,fontSize:'0.65rem',fontWeight:700,border:'none',cursor:'pointer',background:useFilterRange?'#fff':'transparent',color:useFilterRange?'#111827':'#6B7280',boxShadow:useFilterRange?'0 1px 3px rgba(0,0,0,0.1)':'none'}}>Range</button>
+                </div>
+                {!useFilterRange ? (
+                  <div className="atb-date-wrap">
+                    <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="1" y="2" width="11" height="10" rx="2" stroke="currentColor" strokeWidth="1.3"/><path d="M4 1v2M9 1v2M1 5h11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
+                    <input type="date" value={filterDate} onChange={e=>setFilterDate(e.target.value)} className="atb-date"/>
+                  </div>
+                ) : (
+                  <div className="atb-date-wrap" style={{gap:4}}>
+                    <input type="date" value={filterStartDate} onChange={e=>setFilterStartDate(e.target.value)} className="atb-date" style={{width:100}}/>
+                    <span style={{fontSize:'0.7rem',color:'#9CA3AF'}}>to</span>
+                    <input type="date" value={filterEndDate} onChange={e=>setFilterEndDate(e.target.value)} className="atb-date" style={{width:100}}/>
+                  </div>
+                )}
               </div>
             )}
             {alerts.length > 0 && !alertsDismissed && (
@@ -693,13 +746,21 @@ useEffect(() => {
                 <div className="panel">
                   <div className="panel-hdr">
                     <div className="panel-title">&#x1F3C6; Leaderboard</div>
-                    <div style={{display:'flex',gap:5}}>
-                      {['week','month'].map(p => (
+                    <div style={{display:'flex',gap:5,alignItems:'center',flexWrap:'wrap'}}>
+                      {['week','month','custom'].map(p => (
                         <button key={p} onClick={()=>setLeaderPeriod(p)}
                           style={{padding:'3px 10px',borderRadius:20,border:'1.5px solid',fontWeight:700,fontSize:'0.68rem',cursor:'pointer',background:leaderPeriod===p?'#111827':'#f9fafb',color:leaderPeriod===p?'#fff':'#6b7280',borderColor:leaderPeriod===p?'#111827':'#e5e7eb'}}>
-                          {p.charAt(0).toUpperCase()+p.slice(1)}
+                          {p==='custom'?'Range':p.charAt(0).toUpperCase()+p.slice(1)}
                         </button>
                       ))}
+                      {leaderPeriod === 'custom' && (
+                        <div style={{display:'flex',alignItems:'center',gap:4,marginLeft:2,background:'#F3F4F6',padding:'2px 6px',borderRadius:8}}>
+                          <input type="date" value={leaderStartDate} onChange={e=>setLeaderStartDate(e.target.value)} 
+                            style={{border:'none',background:'none',fontSize:'0.65rem',fontWeight:700,color:'#374151',width:80,outline:'none'}} />
+                          <input type="date" value={leaderEndDate} onChange={e=>setLeaderEndDate(e.target.value)} 
+                            style={{border:'none',background:'none',fontSize:'0.65rem',fontWeight:700,color:'#374151',width:80,outline:'none'}} />
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="panel-body" style={{padding:'12px 16px'}}>
@@ -999,10 +1060,18 @@ useEffect(() => {
                           <div className="drill-meta">@{drillData.username}&nbsp;&nbsp;{drillData.territory||'No territory'}&nbsp;&nbsp;{drillData.email||''}</div>
                         </div>
                       </div>
-                      <div className="drill-date-wrap">
-                        <label>Viewing date:</label>
-                        <input type="date" value={drillDate} onChange={e=>setDrillDate(e.target.value)} className="atb-date"/>
-                      </div>
+                      {!useFilterRange && (
+                        <div className="drill-date-wrap">
+                          <label>Viewing date:</label>
+                          <input type="date" value={drillDate} onChange={e=>setDrillDate(e.target.value)} className="atb-date"/>
+                        </div>
+                      )}
+                      {useFilterRange && (
+                        <div className="drill-date-wrap">
+                          <label>Viewing range:</label>
+                          <span style={{fontSize:'0.75rem',fontWeight:800,color:'#111827'}}>{fmtDateShort(filterStartDate)} to {fmtDateShort(filterEndDate)}</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="drill-kpi-row">
@@ -1306,29 +1375,37 @@ useEffect(() => {
           {tab==='analytics' && (
             <div>
               <div style={{background:'#fff',borderRadius:12,padding:'14px 18px',boxShadow:'0 1px 4px rgba(0,0,0,0.07)',marginBottom:16}}>
-                <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',marginBottom:12}}>
-                  <div style={{fontWeight:800,fontSize:'0.9rem',color:'#111827'}}>Analytics</div>
-                  {['week','month','year'].map(p => (
-                    <button key={p} onClick={()=>setAnalyticsPeriod(p)}
-                      style={{padding:'6px 16px',borderRadius:8,border:'1.5px solid',fontWeight:700,fontSize:'0.8rem',cursor:'pointer',background:analyticsPeriod===p?'#2563eb':'#f9fafb',color:analyticsPeriod===p?'#fff':'#6b7280',borderColor:analyticsPeriod===p?'#2563eb':'#e5e7eb'}}>
-                      {p.charAt(0).toUpperCase()+p.slice(1)}
-                    </button>
-                  ))}
-                  <input type="date" value={analyticsDate} onChange={e=>setAnalyticsDate(e.target.value)} style={{padding:'6px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:'0.8rem',color:'#374151'}}/>
-                  {analyticsData && (
-                    <span style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
-                      <span style={{fontSize:'0.75rem',color:'#9ca3af',fontWeight:600}}>{analyticsData.dateFrom} to {analyticsData.dateTo}</span>
-                      <button onClick={()=>{downloadCSVReport(analyticsData,'dcc_'+analyticsPeriod+'_'+analyticsDate+'.csv');toastMsg('CSV downloaded')}}
-                        style={{display:'flex',alignItems:'center',gap:5,padding:'5px 12px',background:'#ECFDF5',border:'1.5px solid #6EE7B7',borderRadius:8,fontSize:'0.72rem',fontWeight:700,color:'#059669',cursor:'pointer'}}>
-                        &#x1F4E5; CSV
+                  <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',marginBottom:12}}>
+                    <div style={{fontWeight:800,fontSize:'0.9rem',color:'#111827'}}>Analytics</div>
+                    {['week','month','year','custom'].map(p => (
+                      <button key={p} onClick={()=>setAnalyticsPeriod(p)}
+                        style={{padding:'6px 16px',borderRadius:8,border:'1.5px solid',fontWeight:700,fontSize:'0.8rem',cursor:'pointer',background:analyticsPeriod===p?'#2563eb':'#f9fafb',color:analyticsPeriod===p?'#fff':'#6b7280',borderColor:analyticsPeriod===p?'#2563eb':'#e5e7eb'}}>
+                        {p==='custom'?'Range':p.charAt(0).toUpperCase()+p.slice(1)}
                       </button>
-                      <button onClick={()=>{const meta=analyticsMgrId?{filteredManager:salesManagers.find(m=>m.id===analyticsMgrId)?.full_name}:{};downloadPDFReport(analyticsData,meta);toastMsg('PDF opening...')}}
-                        style={{display:'flex',alignItems:'center',gap:5,padding:'5px 12px',background:'#EFF6FF',border:'1.5px solid #BFDBFE',borderRadius:8,fontSize:'0.72rem',fontWeight:700,color:'#2563EB',cursor:'pointer'}}>
-                        &#x1F4C4; PDF
-                      </button>
-                    </span>
-                  )}
-                </div>
+                    ))}
+                    {analyticsPeriod === 'custom' ? (
+                      <div style={{display:'flex',alignItems:'center',gap:8,background:'#F3F4F6',padding:'4px 12px',borderRadius:8,border:'1.5px solid #E5E7EB'}}>
+                        <input type="date" value={customStartDate} onChange={e=>setCustomStartDate(e.target.value)} style={{border:'none',background:'none',fontSize:'0.8rem',fontWeight:700,color:'#374151',outline:'none'}}/>
+                        <span style={{fontSize:'0.8rem',color:'#9CA3AF',fontWeight:600}}>to</span>
+                        <input type="date" value={customEndDate} onChange={e=>setCustomEndDate(e.target.value)} style={{border:'none',background:'none',fontSize:'0.8rem',fontWeight:700,color:'#374151',outline:'none'}}/>
+                      </div>
+                    ) : (
+                      <input type="date" value={analyticsDate} onChange={e=>setAnalyticsDate(e.target.value)} style={{padding:'6px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:'0.8rem',color:'#374151'}}/>
+                    )}
+                    {analyticsData && (
+                      <span style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
+                        <span style={{fontSize:'0.75rem',color:'#9ca3af',fontWeight:600}}>{analyticsData.dateFrom} to {analyticsData.dateTo}</span>
+                        <button onClick={()=>{downloadCSVReport(analyticsData,'dcc_'+analyticsPeriod+'_'+analyticsDate+'.csv');toastMsg('CSV downloaded')}}
+                          style={{display:'flex',alignItems:'center',gap:5,padding:'5px 12px',background:'#ECFDF5',border:'1.5px solid #6EE7B7',borderRadius:8,fontSize:'0.72rem',fontWeight:700,color:'#059669',cursor:'pointer'}}>
+                          &#x1F4E5; CSV
+                        </button>
+                        <button onClick={()=>{const meta=analyticsMgrId?{filteredManager:salesManagers.find(m=>m.id===analyticsMgrId)?.full_name}:{};downloadPDFReport(analyticsData,meta);toastMsg('PDF opening...')}}
+                          style={{display:'flex',alignItems:'center',gap:5,padding:'5px 12px',background:'#EFF6FF',border:'1.5px solid #BFDBFE',borderRadius:8,fontSize:'0.72rem',fontWeight:700,color:'#2563EB',cursor:'pointer'}}>
+                          &#x1F4C4; PDF
+                        </button>
+                      </span>
+                    )}
+                  </div>
                 <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
                   <span style={{fontSize:'0.72rem',fontWeight:700,color:'#374151',textTransform:'uppercase',letterSpacing:'0.05em'}}>Filter:</span>
                   <button onClick={()=>setAnalyticsMgrId(null)} style={{padding:'5px 14px',borderRadius:20,border:'1.5px solid',fontWeight:700,fontSize:'0.75rem',cursor:'pointer',background:analyticsMgrId===null?'#111827':'#f9fafb',color:analyticsMgrId===null?'#fff':'#6b7280',borderColor:analyticsMgrId===null?'#111827':'#e5e7eb'}}>All</button>
@@ -1498,13 +1575,22 @@ useEffect(() => {
               <div className="panel">
                 <SectionHeader title="📊 Product Performance Chart" subtitle="Aggregated over selected period"
                   actions={
-                    <div style={{display:'flex',gap:6}}>
-                      {['week','month','year'].map(p => (
+                    <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+                      {['week','month','year','custom'].map(p => (
                         <button key={p} onClick={()=>setAnalyticsPeriod(p)}
                           style={{padding:'4px 12px',borderRadius:20,border:'1.5px solid',fontWeight:700,fontSize:'0.72rem',cursor:'pointer',background:analyticsPeriod===p?'#2563eb':'#f9fafb',color:analyticsPeriod===p?'#fff':'#6b7280',borderColor:analyticsPeriod===p?'#2563eb':'#e5e7eb'}}>
-                          {p.charAt(0).toUpperCase()+p.slice(1)}
+                          {p==='custom'?'Range':p.charAt(0).toUpperCase()+p.slice(1)}
                         </button>
                       ))}
+                      {analyticsPeriod === 'custom' && (
+                        <div style={{display:'flex',alignItems:'center',gap:6,marginLeft:4,background:'#F3F4F6',padding:'2px 8px',borderRadius:10}}>
+                          <input type="date" value={customStartDate} onChange={e=>setCustomStartDate(e.target.value)} 
+                            style={{border:'none',background:'none',fontSize:'0.7rem',fontWeight:700,color:'#374151',outline:'none'}} />
+                          <span style={{fontSize:'0.7rem',color:'#9CA3AF'}}>to</span>
+                          <input type="date" value={customEndDate} onChange={e=>setCustomEndDate(e.target.value)} 
+                            style={{border:'none',background:'none',fontSize:'0.7rem',fontWeight:700,color:'#374151',outline:'none'}} />
+                        </div>
+                      )}
                     </div>
                   }
                 />
