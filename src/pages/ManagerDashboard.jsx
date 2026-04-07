@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { App } from '@capacitor/app'
 import useAuthStore from '../store/authStore'
 import {
     calcDistanceKm, calcTravelTime,
@@ -142,6 +143,11 @@ export default function ManagerDashboard() {
   const [pendingSyncCount, setPendingSyncCount] = useState(() => getQueueCount())
   const [lastSyncAt, setLastSyncAt]         = useState(() => getLastSyncAt())
   const [manualSyncing, setManualSyncing]   = useState(false)
+  
+  // Refresh & Navigation state
+  const [isRefreshing, setIsRefreshing]     = useState(false)
+  const mainRef = useRef(null)
+  const touchStartRef = useRef(0)
 
   // Motivational intro — show once per session
   const [showIntro, setShowIntro]           = useState(getInitialIntroVisibility)
@@ -530,24 +536,91 @@ export default function ManagerDashboard() {
     return () => { window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline) }
   }, [])
 
+  // Touch-to-refresh logic
+  const handleTouchStart = (e) => {
+    // Only allow pull-to-refresh if we are at the very top of the scroll container
+    if (mainRef.current && mainRef.current.scrollTop <= 0) {
+      touchStartRef.current = e.touches[0].clientY
+    } else {
+      touchStartRef.current = null
+    }
+  }
+
+  const handleTouchEnd = async (e) => {
+    if (!touchStartRef.current) return
+    const touchEnd = e.changedTouches[0].clientY
+    const delta = touchEnd - touchStartRef.current
+
+    if (delta > 80 && !isRefreshing) {
+      setIsRefreshing(true)
+      // Fetch latest data safely
+      reload()
+      try {
+        await refreshSync() // Sync customers/targets/tasks (does NOT reset journey state)
+        reload()
+      } catch (err) {}
+      setTimeout(() => setIsRefreshing(false), 800)
+    }
+    touchStartRef.current = null
+  }
+
+  // Capacitor Hardware Back Button Navigation
+  useEffect(() => {
+    const handleBackButton = ({ canGoBack }) => {
+      if (showMap) { setShowMap(false); return }
+      if (visitModal) { setVisitModal(false); return }
+      if (salesModal) { setSalesModal(false); return }
+      if (productModal) { setProductModal(false); return }
+      if (addCustomerModal) { setAddCustomerModal(false); return }
+      if (addBrandModal) { setAddBrandModal(false); return }
+      if (addProductModal) { setAddProductModal(false); return }
+      if (showJourneyModal) { setShowJourneyModal(false); return }
+      if (showInvoiceModal) { setShowInvoiceModal(false); return }
+      if (showStatusPicker) { setShowStatusPicker(false); return }
+      
+      if (tab !== 'home') {
+        setTab('home')
+        return
+      }
+
+      // If at home and no modals, double tap to exit
+      if (window._dccExitTimer) {
+        App.exitApp()
+      } else {
+        toastMsg('Press back again to exit', 'info')
+        window._dccExitTimer = setTimeout(() => { window._dccExitTimer = null }, 2500)
+      }
+    }
+
+    let backListener = null
+    App.addListener('backButton', handleBackButton).then(listener => {
+      backListener = listener
+    }).catch(()=>{}) // ignores exception on web browser
+
+    return () => {
+      if (backListener) backListener.remove()
+    }
+  }, [showMap, visitModal, salesModal, productModal, addCustomerModal, addBrandModal, addProductModal, showJourneyModal, showInvoiceModal, showStatusPicker, tab])
+
   useEffect(() => {
     reload() // instant render from local cache
-    // Background cloud sync — pulls all cloud data into localDB, then reloads
-    refreshSync().then(() => {
-      reload()
-      // If journey still null after sync (e.g. cleared localDB), try cloud directly
-      if (user?.id) {
-        getActiveJourneyCloud(user.id).then(j => {
-          if (j) setJourney(j)
-        }).catch(() => {})
-      }
-    }).catch(() => {})
+    
+    // Journey-Based Launch Logic
+    // If localDB says journey is active, auto-open the map.
+    // We intentionally SKIP the cloud active journey override here as requested (no cloud sync state modifier during check)
+    if (user?.id) {
+       const initialJourney = getActiveJourney(user.id)
+       if (initialJourney) {
+           setShowMap(true)
+       }
+    }
+
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then(reg => {
         reg.active?.postMessage({ type: 'SCHEDULE_DAILY_REMINDER', managerName: user?.full_name })
       }).catch(()=>{})
     }
-  }, [reload])
+  }, [reload, user?.id])
 
   /* -- GPS helpers -- */
   const getGPS = useCallback(() => getCurrentPosition(), [])
@@ -925,6 +998,11 @@ export default function ManagerDashboard() {
       <header className="mgr-header">
         <div className="mgr-hdr-top">
           <div className="mgr-user">
+            {tab !== 'home' && (
+              <button className="back-btn" onClick={() => setTab('home')} style={{ width: '32px', height: '32px', borderRadius: '50%', border: 'none', background: '#F3F4F6', color: '#4B5563', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginRight: '8px' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </button>
+            )}
             <div className="mgr-avatar mgr-avatar-logo" onClick={()=>setTab('profile')} style={{cursor:'pointer'}}>
               {profilePic
                 ? <img src={profilePic} alt="Profile" style={{width:'100%',height:'100%',objectFit:'cover',borderRadius:'inherit'}}/>
@@ -995,7 +1073,14 @@ export default function ManagerDashboard() {
       )}
 
       {/* -- Main -- */}
-      <main className="mgr-main">
+      <main className="mgr-main" ref={mainRef} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+        {/* Pull to refresh indicator */}
+        {isRefreshing && (
+          <div style={{ display:'flex', justifyContent:'center', padding:'12px', background:'#EFF6FF', color:'#3B82F6', fontSize:'0.85rem', fontWeight:600, alignItems:'center', gap:'8px', borderRadius:'0 0 12px 12px', marginBottom:'16px', boxShadow:'inset 0 -1px 3px rgba(0,0,0,0.05)' }}>
+            <svg className="jlp-pulse" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation:'spin 1s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M22 3v5h-5"/></svg>
+            Refreshing data...
+          </div>
+        )}
 
         {/* ---- HOME ---- */}
         {tab==='home' && (

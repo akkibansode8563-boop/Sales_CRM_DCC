@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { App } from '@capacitor/app'
 import useAuthStore from '../store/authStore'
 import dccLogo from '../assets/dcc-logo.png'
 import dccLogoWhite from '../assets/dcc-logo-white.png'
@@ -111,6 +112,9 @@ export default function AdminDashboard() {
   const [syncStatus,      setSyncStatus]      = useState('idle')
   const [lastSyncAt,      setLastSyncAt]      = useState(() => getLastSyncAt())
   const [manualSyncing,   setManualSyncing]   = useState(false)
+  const [isRefreshing,    setIsRefreshing]    = useState(false)
+  const mainRef = useRef(null)
+  const touchStartRef = useRef(0)
 
   const initUF = { username:'',password:'',full_name:'',email:'',phone:'',territory:'',role:'Sales Manager' }
   const initTF = { visit_target:'',sales_target:'',month:new Date().getMonth()+1,year:new Date().getFullYear() }
@@ -178,6 +182,65 @@ export default function AdminDashboard() {
     if (window.prompt('Type YES to confirm:') !== 'YES') return toastMsg('Cancelled', 'error')
     productionReset(); reload(); toastMsg('Production reset complete.')
   }
+
+  // Swipe-to-refresh logic
+  const handleTouchStart = (e) => {
+    if (mainRef.current && mainRef.current.scrollTop <= 0) {
+      touchStartRef.current = e.touches[0].clientY
+    } else {
+      touchStartRef.current = null
+    }
+  }
+
+  const handleTouchEnd = async (e) => {
+    if (!touchStartRef.current) return
+    const touchEnd = e.changedTouches[0].clientY
+    const delta = touchEnd - touchStartRef.current
+
+    if (delta > 80 && !isRefreshing) {
+      setIsRefreshing(true)
+      reload()
+      try {
+        if (typeof refreshSync === 'function') await refreshSync()
+        reload()
+      } catch (err) {}
+      setTimeout(() => setIsRefreshing(false), 800)
+    }
+    touchStartRef.current = null
+  }
+
+  // Capacitor Hardware Back Button Navigation
+  useEffect(() => {
+    const handleBackButton = () => {
+      if (sidebarOpen) { setSidebarOpen(false); return }
+      if (userModal) { setUserModal(false); return }
+      if (targetModal) { setTargetModal(false); return }
+      if (showReplay) { setShowReplay(false); return }
+      if (alertsOpen) { setAlertsOpen(false); return }
+      
+      if (tab !== 'overview') {
+        setTab('overview')
+        return
+      }
+
+      // If at overview and no modals, double tap to exit
+      if (window._dccAdminExitTimer) {
+        App.exitApp()
+      } else {
+        toastMsg('Press back again to exit', 'info')
+        window._dccAdminExitTimer = setTimeout(() => { window._dccAdminExitTimer = null }, 2500)
+      }
+    }
+
+    let backListener = null
+    App.addListener('backButton', handleBackButton).then(listener => {
+      backListener = listener
+    }).catch(()=>{}) 
+
+    return () => {
+      if (backListener) backListener.remove()
+    }
+  }, [sidebarOpen, userModal, targetModal, showReplay, alertsOpen, tab])
 
   useEffect(() => {
     // Instant render from local cache
@@ -507,9 +570,20 @@ useEffect(() => {
         </div>
       </aside>
     </>
-      <div className="admin-main">
+      <div className="admin-main" ref={mainRef} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+        {isRefreshing && (
+          <div style={{ display:'flex', justifyContent:'center', padding:'12px', background:'#EFF6FF', color:'#3B82F6', fontSize:'0.85rem', fontWeight:600, alignItems:'center', gap:'8px', borderRadius:'0 0 12px 12px', position: 'sticky', top: 0, zIndex: 100, boxShadow:'0 2px 4px rgba(0,0,0,0.05)' }}>
+            <svg style={{ animation: 'spin 1s linear infinite' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M22 3v5h-5"/></svg>
+            Refreshing...
+          </div>
+        )}
 
         <div className="admin-mobile-header">
+          {tab !== 'overview' && (
+            <button className="amh-back" onClick={() => setTab('overview')} style={{ background: 'none', border: 'none', color: '#4B5563', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '4px' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+          )}
           <button className="amh-menu" onClick={()=>setSidebarOpen(true)}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 4h14M2 9h14M2 14h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
           </button>
