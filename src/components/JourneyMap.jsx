@@ -78,11 +78,12 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
     if (!mapRef.current || mapInstanceRef.current) return
     const lat = journey?.start_latitude || 20.5937
     const lng = journey?.start_longitude || 78.9629
-    const map = L.map(mapRef.current, { zoomControl: true })
+    const map = L.map(mapRef.current, { zoomControl: true, preferCanvas: true })
     mapInstanceRef.current = map
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
       { attribution:'© OpenStreetMap contributors', maxZoom:19 }).addTo(map)
     map.setView([lat, lng], journey?.start_latitude ? 14 : 5)
+    setTimeout(() => { if (map) map.invalidateSize() }, 300)
     setMapReady(true)
   }
 

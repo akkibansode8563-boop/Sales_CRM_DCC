@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/authStore'
 import { authLogin } from '../utils/supabaseDB'
@@ -10,11 +10,17 @@ import './Login.css'
 export default function Login() {
   const navigate = useNavigate()
   const isCloud = isSupabaseConfigured()
-  const { login } = useAuthStore()
+  const { login, isAuthenticated, user } = useAuthStore()
   const [form, setForm]     = useState({ username: '', password: '' })
   const [showPwd, setShowPwd] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError]   = useState('')
+
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      navigate(user.role === 'Admin' ? '/admin' : '/manager', { replace: true })
+    }
+  }, [isAuthenticated, user, navigate])
 
   const handleSubmit = async e => {
     e.preventDefault()

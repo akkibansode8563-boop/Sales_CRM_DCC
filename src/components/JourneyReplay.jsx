@@ -66,11 +66,12 @@ export default function JourneyReplay({ onClose }) {
 
   useEffect(() => {
     if (!mapReady || !mapRef.current || mapInst.current) return
-    const m = L.map(mapRef.current, { zoomControl: true })
+    const m = L.map(mapRef.current, { zoomControl: true, preferCanvas: true })
     mapInst.current = m
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
       { attribution:'© OpenStreetMap', maxZoom:19 }).addTo(m)
     m.setView([20.5937, 78.9629], 5)
+    setTimeout(() => { if (m) m.invalidateSize() }, 300)
   }, [mapReady])
 
   const selectManager = (mgr) => {

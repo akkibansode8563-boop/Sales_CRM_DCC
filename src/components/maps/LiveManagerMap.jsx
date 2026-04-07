@@ -29,13 +29,16 @@ export default memo(function LiveManagerMap({ managers = [] }) {
         center: [19.076, 72.8777], // Mumbai default
         zoom: 11,
         zoomControl: true,
-        scrollWheelZoom: true
+        scrollWheelZoom: true,
+        preferCanvas: true
       })
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
         maxZoom: 19
       }).addTo(map)
+      
+      setTimeout(() => { if (map) map.invalidateSize() }, 300)
 
       mapInstanceRef.current = { map, L }
     })

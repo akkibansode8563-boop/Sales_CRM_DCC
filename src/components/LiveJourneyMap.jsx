@@ -83,11 +83,12 @@ export default function LiveJourneyMap({ journey, visits, managerName, mode='liv
       if (!mapRef.current || mapInst.current) return
       const lat = journey?.start_latitude || 19.076
       const lng = journey?.start_longitude || 72.877
-      const map = L.map(mapRef.current, { zoomControl:true, attributionControl:false })
+      const map = L.map(mapRef.current, { zoomControl:true, attributionControl:false, preferCanvas: true })
       mapInst.current = map
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OSM' }).addTo(map)
       L.control.attribution({position:'bottomleft'}).addTo(map)
       map.setView([lat,lng], journey?.start_latitude ? 13 : 11)
+      setTimeout(() => { if (map) map.invalidateSize() }, 300)
       setMapReady(true)
     })
     return () => {

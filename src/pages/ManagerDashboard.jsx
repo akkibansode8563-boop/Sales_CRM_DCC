@@ -76,10 +76,8 @@ const getInitialOnlineStatus = () => (typeof navigator !== 'undefined' ? navigat
 const getInitialNotificationPermission = () => (typeof Notification !== 'undefined' ? Notification.permission : 'default')
 const getInitialIntroVisibility = () => {
   try {
-    if (typeof window !== 'undefined' && window.Capacitor) {
-      return false
-    }
-    return typeof sessionStorage !== 'undefined' && !sessionStorage.getItem('dcc_intro_shown')
+    const today = new Date().toISOString().split('T')[0]
+    return typeof localStorage !== 'undefined' && localStorage.getItem('dcc_intro_date') !== today
   } catch {
     return false
   }
@@ -439,13 +437,12 @@ export default function ManagerDashboard() {
   /* ── Continuous GPS tracking while journey is active ──────────────────── */
   useEffect(() => {
     if (!journey?.id || !user?.id) return
-    if (!navigator.geolocation) return
 
     let watchId = null
+    let fallbackInterval = null
     let lastLat = null, lastLng = null
 
     const sendGPS = (lat, lng) => {
-      // Only update if moved more than ~10 meters
       if (lastLat !== null) {
         const dlat = Math.abs(lat - lastLat), dlng = Math.abs(lng - lastLng)
         if (dlat < 0.0001 && dlng < 0.0001) return
@@ -454,25 +451,62 @@ export default function ManagerDashboard() {
       try { addJourneyLocation(journey.id, user.id, lat, lng) } catch(e) {}
     }
 
-    // Watch position continuously
-    watchId = navigator.geolocation.watchPosition(
-      pos => sendGPS(pos.coords.latitude, pos.coords.longitude),
-      err  => console.warn('GPS watch error:', err.message),
-      { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 }
-    )
+    const startTracking = async () => {
+      // 1. Native Background Geolocation (Zomato/Swiggy style tracker)
+      if (typeof window !== 'undefined' && window.Capacitor?.isNative) {
+        try {
+          const { registerPlugin } = await import('@capacitor/core')
+          const BackgroundGeolocation = registerPlugin('BackgroundGeolocation')
+          
+          watchId = await BackgroundGeolocation.addWatcher({
+            backgroundMessage: "Tracking your field journey continuously.",
+            backgroundTitle: "DCC SalesForce Active",
+            requestPermissions: true,
+            stale: false,
+            distanceFilter: 10 // meters
+          }, (location, error) => {
+            if (error || !location) return
+            sendGPS(location.latitude, location.longitude)
+          })
+          return // successfully started native watcher
+        } catch (err) {
+          console.warn('Native Background GPS failed, falling back...', err)
+        }
+      }
 
-    // Also poll every 30s as fallback
-    const interval = setInterval(() => {
-      navigator.geolocation.getCurrentPosition(
-        pos => sendGPS(pos.coords.latitude, pos.coords.longitude),
-        ()  => {},
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 20000 }
-      )
-    }, 30000)
+      // 2. Web Fallback (stops in background)
+      if (navigator.geolocation) {
+        watchId = navigator.geolocation.watchPosition(
+          pos => sendGPS(pos.coords.latitude, pos.coords.longitude),
+          err => console.warn('GPS watch error:', err.message),
+          { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 }
+        )
+        fallbackInterval = setInterval(() => {
+          navigator.geolocation.getCurrentPosition(
+            pos => sendGPS(pos.coords.latitude, pos.coords.longitude),
+            () => {},
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 20000 }
+          )
+        }, 30000)
+      }
+    }
+
+    startTracking()
 
     return () => {
-      if (watchId !== null) navigator.geolocation.clearWatch(watchId)
-      clearInterval(interval)
+      const stopTracking = async () => {
+        if (typeof window !== 'undefined' && window.Capacitor?.isNative && watchId && typeof watchId === 'string') {
+          try {
+            const { registerPlugin } = await import('@capacitor/core')
+            const BackgroundGeolocation = registerPlugin('BackgroundGeolocation')
+            BackgroundGeolocation.removeWatcher({ id: watchId })
+          } catch(e) {}
+        } else if (navigator.geolocation && watchId !== null && typeof watchId === 'number') {
+          navigator.geolocation.clearWatch(watchId)
+        }
+        if (fallbackInterval) clearInterval(fallbackInterval)
+      }
+      stopTracking()
     }
   }, [journey?.id, user?.id])
 
@@ -831,12 +865,13 @@ export default function ManagerDashboard() {
 
   return (
     <div className="mgr-app">
-      {/* ── Motivational Intro Screen (shown once per session) ── */}
+      {/* ── Motivational Intro Screen (shown once per day) ── */}
       {showIntro && (
         <MotivationalIntro
           user={user}
           onComplete={() => {
-            sessionStorage.setItem('dcc_intro_shown','1')
+            const today = new Date().toISOString().split('T')[0]
+            localStorage.setItem('dcc_intro_date', today)
             setShowIntro(false)
           }}
         />
@@ -1070,7 +1105,7 @@ export default function ManagerDashboard() {
               <div className="qa-row">
                 {[
                   {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>, bg:'#EFF6FF', lbl:'Journey\nMap', fn:()=>setShowMap(true)},
-                  {ico:<span style={{fontSize:'20px'}}>⚡</span>, bg:'#D1FAE5', lbl:'Quick\nCheck-in', fn:handleQuickCheckIn},
+                  {ico:<span style={{fontSize: 20}}>⚡</span>, bg:'#D1FAE5', lbl:'Quick\nCheck-In', fn:handleQuickCheckIn},
                   {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>, bg:'#ECFDF5', lbl:'Log\nVisit', fn:()=>{setVf(initVF());setVisitModal(true)}},
                   {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>, bg:'#FEF3C7', lbl:'Customers', fn:()=>setTab('customers')},
                   {ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>, bg:'#FFFBEB', lbl:'Sales\nReport', fn:()=>{setSf(initSF());setSalesModal(true)}},
@@ -1159,9 +1194,9 @@ export default function ManagerDashboard() {
           <div className="tab-pane">
             <div className="tab-hdr">
               <span className="tab-hdr-title">All Visits <span className="tab-hdr-count">({allVisits.length})</span></span>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button className="btn-add" onClick={handleQuickCheckIn} style={{ background: '#10B981', borderColor: '#059669' }}>⚡ Quick Check-In</button>
-                <button className="btn-add" onClick={()=>{setVf(initVF());setVisitModal(true)}}>+ Log Visit</button>
+              <div style={{display:'flex', gap: 6}}>
+                <button className="btn-add" onClick={handleQuickCheckIn} style={{background: '#10B981', color: 'white', padding: '6px 10px'}}>⚡ Quick</button>
+                <button className="btn-add" onClick={()=>{setVf(initVF());setVisitModal(true)}}>+ Visit</button>
               </div>
             </div>
             {allVisits.length===0

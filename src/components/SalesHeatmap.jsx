@@ -51,10 +51,11 @@ export default function SalesHeatmap({ onClose }) {
 
   useEffect(() => {
     if (!mapReady || !mapRef.current || mapInst.current) return
-    const m = L.map(mapRef.current, { zoomControl: true })
+    const m = L.map(mapRef.current, { zoomControl: true, preferCanvas: true })
     mapInst.current = m
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
       { attribution:'© OpenStreetMap', maxZoom:19 }).addTo(m)
+    setTimeout(() => { if (m) m.invalidateSize() }, 300)
     m.setView([19.0760, 72.8777], 10)  // Mumbai default
     refreshData(null)
   }, [mapReady])
