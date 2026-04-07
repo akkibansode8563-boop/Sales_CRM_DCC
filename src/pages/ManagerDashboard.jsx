@@ -12,6 +12,7 @@ import {
     getProductEntriesSync  as getProductDayEntries,
     getTargetsSync         as getTargets,
     getActiveJourneySync   as getActiveJourney,
+    getActiveJourney       as getActiveJourneyCloud,
     getTodayVisitsSync     as getTodayVisits,
     getCustomersSync       as getCustomers,
     getTasksSync           as getTasks,
@@ -531,7 +532,16 @@ export default function ManagerDashboard() {
 
   useEffect(() => {
     reload() // instant render from local cache
-    refreshSync().then(() => reload()).catch(() => {}) // background cloud sync
+    // Background cloud sync — pulls all cloud data into localDB, then reloads
+    refreshSync().then(() => {
+      reload()
+      // If journey still null after sync (e.g. cleared localDB), try cloud directly
+      if (user?.id) {
+        getActiveJourneyCloud(user.id).then(j => {
+          if (j) setJourney(j)
+        }).catch(() => {})
+      }
+    }).catch(() => {})
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then(reg => {
         reg.active?.postMessage({ type: 'SCHEDULE_DAILY_REMINDER', managerName: user?.full_name })
@@ -604,6 +614,22 @@ export default function ManagerDashboard() {
     toastMsg(`Status → ${s}`)
   }
 
+  const forceCloudJourneySync = async () => {
+    if (!user?.id) return
+    toastMsg('Syncing journey from cloud...', 'info')
+    try {
+      const j = await getActiveJourneyCloud(user.id)
+      if (j) {
+        setJourney(j)
+        toastMsg('Journey restored from cloud! ✅')
+      } else {
+        toastMsg('No active journey found in cloud.', 'info')
+      }
+    } catch {
+      toastMsg('Failed to sync journey from cloud', 'error')
+    }
+  }
+
   /* -- Journey -- */
   const handleStartJourney = () => {
     // Open the levelled-up journey mode selector modal
@@ -659,8 +685,11 @@ export default function ManagerDashboard() {
         : 'Starting Point'
       const j = await startJourney(user.id, fallbackLocation, gpsCoords?.lat, gpsCoords?.lng)
       setJourney(j)
-      await changeStatus(mode)
-      toastMsg(`${mode} journey started! 🚀`)
+      // Always set to 'On Field' so admin sees manager on the live map
+      // The selected mode just describes the type of activity
+      const statusToSet = mode === 'On Field' ? 'On Field' : 'On Field'
+      await changeStatus(statusToSet)
+      toastMsg(`Journey started! 🚀 Status: On Field`)
       setShowMap(true)
       if (gpsCoords) {
         reverseGeo(gpsCoords.lat, gpsCoords.lng)
@@ -671,7 +700,22 @@ export default function ManagerDashboard() {
           })
           .catch(() => {})
       }
-    } catch(e) { toastMsg(e.message,'error') }
+    } catch(e) {
+      // If journey already active in cloud, load it into state
+      if (e.message === 'Journey already active' && user?.id) {
+        try {
+          const existing = await getActiveJourneyCloud(user.id)
+          if (existing) {
+            setJourney(existing)
+            await changeStatus('On Field')
+            toastMsg('Existing journey resumed! 🗺️')
+            setShowMap(true)
+            return
+          }
+        } catch {}
+      }
+      toastMsg(e.message,'error')
+    }
   }
   const handleEndJourney = async () => {
     toastMsg('Getting your location…','info')
@@ -1578,7 +1622,7 @@ export default function ManagerDashboard() {
       {/* ---- JOURNEY MAP ---- */}
       {showMap && (
         <JourneyMap journey={journey} visits={todayVisits} managerName={user?.full_name}
-          onVisitLogged={onVisitLogged} onClose={()=>{setShowMap(false);reload()}}/>
+          onVisitLogged={onVisitLogged} onClose={()=>{setShowMap(false);reload()}} onRefresh={forceCloudJourneySync}/>
       )}
 
       {/* ---- VISIT MODAL — with Smart Autocomplete ---- */}

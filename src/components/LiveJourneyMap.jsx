@@ -170,7 +170,7 @@ export default function LiveJourneyMap({ journey, visits, managerName, mode='liv
 
   // Live GPS tracking (poll every 15s)
   useEffect(() => {
-    if (!trackingOn || mode!=='live' || !journey?.status==='active') return
+    if (!trackingOn || mode!=='live' || journey?.status !== 'active') return
     const track = () => {
       navigator.geolocation?.getCurrentPosition(
         async pos => {

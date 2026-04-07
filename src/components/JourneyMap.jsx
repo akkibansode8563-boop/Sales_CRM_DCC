@@ -11,7 +11,7 @@ const VISIT_TYPES  = ['Field Visit','Sales Visit','Service Visit','Demo Visit','
 
 const fmtTime = iso => iso ? new Date(iso).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : '--'
 
-export default function JourneyMap({ journey, visits, onVisitLogged, onClose, managerName }) {
+export default function JourneyMap({ journey, visits, onVisitLogged, onClose, managerName, onRefresh }) {
   const mapRef         = useRef(null)
   const mapInstanceRef = useRef(null)
   const markersRef     = useRef([])
@@ -473,7 +473,14 @@ export default function JourneyMap({ journey, visits, onVisitLogged, onClose, ma
         <div className="jmap-error">
           <div className="jmap-error-ico">🚗</div>
           <div className="jmap-error-msg">No active journey.<br/>Start a journey from the Home tab to enable GPS tracking and route mapping.</div>
-          <span className="jmap-error-link" onClick={onClose}>← Back to Dashboard</span>
+          <div style={{ display: 'flex', gap: '16px', marginTop: '16px', justifyContent: 'center' }}>
+            <span className="jmap-error-link" onClick={onClose} style={{ marginTop: 0 }}>← Back to Dashboard</span>
+            {onRefresh && (
+              <span className="jmap-error-link" onClick={onRefresh} style={{ marginTop: 0, color: '#10B981', borderBottomColor: '#10B98133' }}>
+                ↻ Sync from Cloud
+              </span>
+            )}
+          </div>
         </div>
       )}
     </div>

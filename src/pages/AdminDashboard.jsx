@@ -10,6 +10,7 @@ import {
     subscribeToLiveUpdates, subscribeToLocalChanges, migrateLocalToSupabase,
     exportToCSV, exportDailyReport,
     getLiveStatusSync      as getLiveStatus,
+    getLiveStatus          as getLiveStatusAsync,
     getUsersAdminSync      as getUsersAdmin,
     getAllVisitsSync        as getAllVisits,
     getDailyReportsSync    as getDailySalesReports,
@@ -186,8 +187,38 @@ export default function AdminDashboard() {
       refreshSync().then(() => reload()).catch(() => {})
     }
   }, [reload])
+
+  // Real-time GPS polling: pull live manager GPS from cloud every 30s
+  // This is separate from reload() which uses localDB (no GPS data)
   useEffect(() => {
-    const unsub = subscribeToLiveUpdates(() => { setTimeout(reload, 800) })
+    if (!isSupabaseConfigured()) return
+    const pollLiveGPS = async () => {
+      try {
+        const live = await getLiveStatusAsync()
+        if (Array.isArray(live) && live.length > 0) {
+          setManagers(live)
+        }
+      } catch {}
+    }
+    // Poll immediately, then every 30 seconds
+    pollLiveGPS()
+    const interval = setInterval(pollLiveGPS, 30000)
+    return () => clearInterval(interval)
+  }, [])
+  useEffect(() => {
+    const unsub = subscribeToLiveUpdates((payload) => {
+      setTimeout(reload, 800)
+      // When journey/GPS/status changes, refresh live manager GPS immediately
+      const table = payload?.table || ''
+      if (['journeys', 'journey_locations', 'status_history'].includes(table) && isSupabaseConfigured()) {
+        setTimeout(async () => {
+          try {
+            const live = await getLiveStatusAsync()
+            if (Array.isArray(live) && live.length > 0) setManagers(live)
+          } catch {}
+        }, 1200)
+      }
+    })
     return unsub
   }, [reload])
 

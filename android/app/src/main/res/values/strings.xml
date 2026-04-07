@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">DCC SFA</string>
-    <string name="title_activity_main">DCC SFA</string>
+    <string name="app_name">SALES FORCE</string>
+    <string name="title_activity_main">SALES FORCE</string>
     <string name="package_name">com.dcc.salescrm</string>
     <string name="custom_url_scheme">com.dcc.salescrm</string>
 </resources>
