@@ -87,6 +87,7 @@ const NAV = [
 
 export default function AdminDashboard() {
   const { user, logout } = useAuthStore()
+  const today    = new Date().toISOString().split('T')[0]
   const [tab,             setTab]           = useState('overview')
   const [managers,        setManagers]      = useState([])
   const [users,           setUsers]         = useState([])
@@ -131,12 +132,12 @@ export default function AdminDashboard() {
   const mainRef = useRef(null)
   const touchStartRef = useRef(0)
 
+  const [managerRows, setManagerRows] = useState([])
   const initUF = { username:'',password:'',full_name:'',email:'',phone:'',territory:'',role:'Sales Manager' }
   const initTF = { visit_target:'',sales_target:'',month:new Date().getMonth()+1,year:new Date().getFullYear() }
   const [uf, setUf] = useState(initUF)
   const [tf, setTf] = useState(initTF)
 
-  const today    = new Date().toISOString().split('T')[0]
   const toastMsg = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3200) }
   const syncLabel = lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' }) : 'Not yet'
 
@@ -352,11 +353,8 @@ export default function AdminDashboard() {
   const onField          = Array.isArray(managers) ? managers.filter(m=>m.status==='On Field').length : 0
   const activeJourneys   = Array.isArray(managers) ? managers.filter(m=>m.active_journey).length : 0
   
-  // Period-based KPIs (from filtered managerRows)
-  const totalVisitsPeriod = (managerRows || []).reduce((s,m)=>s+(m.dayVisits?.length||0),0)
-  const totalSalesPeriod  = (managerRows || []).reduce((s,m)=>s+(m.dayReport?.sales_achievement||0),0)
-  const totalTasksPeriod  = taskSummary.overdueTasks.length
   const customersById = useMemo(() => new Map((allCustomers || []).map(c => [c.id, c])), [allCustomers])
+  
   const taskSummary = useMemo(() => {
     const openTasks = (allTasks || []).filter(task => task.status !== 'completed' && !task.deleted_at)
     const overdueTasks = openTasks.filter(task => task.due_at && new Date(task.due_at) < new Date())
@@ -370,6 +368,7 @@ export default function AdminDashboard() {
     })
     return { openTasks, overdueTasks, tasksByManager }
   }, [allTasks])
+
   const visitsByManager = useMemo(() => {
     const map = new Map()
     ;(allVisitsData || []).forEach((visit) => {
@@ -453,7 +452,11 @@ export default function AdminDashboard() {
       }
     })
   }, [getVisitCustomerDetails, managers, salesManagers, taskSummary.tasksByManager, today, visitsByManager, useFilterRange, filterStartDate, filterEndDate])
-const [managerRows, setManagerRows] = useState([])
+
+  // Period-based KPIs (from filtered managerRows)
+  const totalVisitsPeriod = (managerRows || []).reduce((s,m)=>s+(m.dayVisits?.length||0),0)
+  const totalSalesPeriod  = (managerRows || []).reduce((s,m)=>s+(m.dayReport?.sales_achievement||0),0)
+  const totalTasksPeriod  = taskSummary.overdueTasks.length
 useEffect(() => {
   if (!salesManagers || salesManagers.length === 0) {
     setManagerRows([])
