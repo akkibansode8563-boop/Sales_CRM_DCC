@@ -154,7 +154,12 @@ export default function AdminDashboard() {
   useEffect(() => {
     startAutoSync(30000)
     const unsub = onSyncStatusChange(s => {
-      setSyncStatus(s.syncing ? 'syncing' : s.status || 'idle')
+      let status = s.status || 'idle'
+      if (s.status === 'scheduled_morning') status = 'Morning Sync'
+      if (s.status === 'scheduled_evening') status = 'Evening Sync'
+      if (s.status === 'realtime') status = 'Live Update'
+      
+      setSyncStatus(s.syncing ? 'syncing' : status)
       setOfflineCount(s.count || 0)
       if (s.lastSyncAt) setLastSyncAt(s.lastSyncAt)
     })
@@ -288,16 +293,22 @@ export default function AdminDashboard() {
   }, [])
   useEffect(() => {
     const unsub = subscribeToLiveUpdates((payload) => {
-      setTimeout(reload, 800)
-      // When journey/GPS/status changes, refresh live manager GPS immediately
       const table = payload?.table || ''
-      if (['journeys', 'journey_locations', 'status_history'].includes(table) && isSupabaseConfigured()) {
-        setTimeout(async () => {
-          try {
-            const live = await getLiveStatusAsync()
-            if (Array.isArray(live) && live.length > 0) setManagers(live)
-          } catch {}
-        }, 1200)
+      // Only reload everything for priority modules (Instant Sync)
+      const isPriority = ['visits', 'journeys', 'journey_locations', 'status_history'].includes(table)
+      
+      if (isPriority) {
+        setTimeout(reload, 300)
+        
+        // Specially for journey/GPS/status, force immediate GPS re-fetch
+        if (['journeys', 'journey_locations', 'status_history'].includes(table) && isSupabaseConfigured()) {
+          setTimeout(async () => {
+            try {
+              const live = await getLiveStatusAsync()
+              if (Array.isArray(live) && live.length > 0) setManagers(live)
+            } catch {}
+          }, 800)
+        }
       }
     })
     return unsub
@@ -311,7 +322,10 @@ export default function AdminDashboard() {
 
   // Cloud mode: Supabase realtime subscription for instant sync
   useEffect(() => {
-    const unsub = startRealtimeSync(() => { setTimeout(reload, 300) })
+    const unsub = startRealtimeSync((payload) => { 
+      // This listener handles priority tables via syncService.js
+      setTimeout(reload, 300) 
+    })
     return unsub
   }, [reload])
 

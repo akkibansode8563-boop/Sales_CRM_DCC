@@ -330,7 +330,10 @@ export async function updateStatus(manager_id, status) {
     if (error) throw error
     local.updateStatus(manager_id, status)
     return data
-  } catch { return local.updateStatus(manager_id, status) }
+  } catch(e) { 
+    queueOfflineAction('updateStatus', { manager_id, status })
+    return local.updateStatus(manager_id, status) 
+  }
 }
 
 export function getCurrentStatus(manager_id) {
@@ -389,12 +392,15 @@ export async function createVisit(data) {
       visit_count: (customer?.visit_count || 0) + 1,
       last_visited: new Date().toISOString()
     })
-    .eq('id', data.customer_id)
+    .eq('id', data.customer_id).catch(() => {})
 }
     // Mirror to local for offline analytics
     try { local.createVisit({ ...data, created_at: newVisit?.created_at || new Date().toISOString() }) } catch {}
     return newVisit
-  } catch { return local.createVisit(data) }
+  } catch(e) { 
+    queueOfflineAction('createVisit', data)
+    return local.createVisit(data) 
+  }
 }
 
 export async function updateVisit(id, updates) {
@@ -438,7 +444,8 @@ export async function createTask(data) {
     if (error) throw error
     try { createOfflineTask({ ...payload, id: task?.id, created_at: task?.created_at }) } catch {}
     return task
-  } catch {
+  } catch(e) {
+    queueOfflineAction('createTask', data)
     return local.createTask(data)
   }
 }
@@ -554,13 +561,14 @@ export async function startJourney(manager_id, start_location, latitude, longitu
     if (error) throw error
     // Add first GPS point
     if (latitude) {
-      await supabase.from('journey_locations').insert({ journey_id: journey.id, manager_id, latitude, longitude, speed_kmh: 0, is_suspicious: false })
+      await supabase.from('journey_locations').insert({ journey_id: journey.id, manager_id, latitude, longitude, speed_kmh: 0, is_suspicious: false }).catch(() => {})
     }
     // Mirror to local
     try { local.startJourney(manager_id, start_location, latitude, longitude) } catch {}
     return journey
   } catch (e) {
     if (e.message === 'Journey already active') throw e
+    queueOfflineAction('startJourney', { manager_id, start_location, latitude, longitude })
     return local.startJourney(manager_id, start_location, latitude, longitude)
   }
 }
@@ -593,6 +601,7 @@ export async function endJourney(manager_id, end_location, latitude, longitude) 
     return updated
   } catch (e) {
     if (e.message === 'No active journey') throw e
+    queueOfflineAction('endJourney', { manager_id, end_location, latitude, longitude })
     return local.endJourney(manager_id, end_location, latitude, longitude)
   }
 }

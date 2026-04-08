@@ -67,12 +67,20 @@ export async function trySyncQueue() {
   }
 }
 
-// ── Realtime subscription (Supabase cloud mode) ────────────
-const REALTIME_TABLES = [
+// ── Realtime & Sync Configuration ──────────────────────────
+// Priority: Instant Sync (Admin Monitoring)
+const PRIORITY_TABLES = [
+  'visits', 
+  'journeys', 
+  'journey_locations', 
+  'status_history'
+]
+
+// Scheduled: Master data and performance reports
+const SCHEDULED_TABLES = [
   'users', 'brands', 'products',
-  'visits', 'journeys', 'journey_locations',
-  'status_history', 'daily_sales_reports',
-  'product_day', 'customers', 'targets'
+  'daily_sales_reports', 'product_day', 
+  'customers', 'targets', 'tasks'
 ]
 
 export function startRealtimeSync(onUpdate) {
@@ -88,7 +96,8 @@ export function startRealtimeSync(onUpdate) {
     config: { broadcast: { self: false } }
   })
 
-  REALTIME_TABLES.forEach(table => {
+  // Subscribe ONLY to priority tables for real-time monitoring
+  PRIORITY_TABLES.forEach(table => {
     channel = channel.on(
       'postgres_changes',
       { event: '*', schema: 'public', table },
@@ -123,6 +132,7 @@ export async function forceSyncNow() {
   try {
     const queueResult = await trySyncQueue()
     if (isSupabaseConfigured() && supabase) {
+      // Manual sync still pulls everything
       await syncCloudToLocal()
     }
     markSynced('manual')
@@ -130,6 +140,52 @@ export async function forceSyncNow() {
   } catch (error) {
     notify({ syncing: false, error: error.message, status: 'error', count: getQueueCount() })
     return { success: false, message: error.message }
+  }
+}
+
+// ── Priority Flush ──────────────────────────────────────────
+// Call this immediately after logging visits/journeys
+export async function flushPriorityData() {
+  if (!navigator.onLine) return
+  const queue = getOfflineQueue()
+  const priorityQueue = queue.filter(item => PRIORITY_TABLES.includes(item.table))
+  
+  if (priorityQueue.length > 0) {
+    return await trySyncQueue()
+  }
+}
+
+// ── Scheduled Sync Logic ────────────────────────────────────
+export async function checkScheduledSync() {
+  const now = new Date()
+  const hour = now.getHours()
+  const dateStr = now.toISOString().split('T')[0]
+  
+  // Morning Sync (8 AM - 11 AM)
+  if (hour >= 8 && hour < 11) {
+    const lastMorning = localStorage.getItem('last_morning_sync')
+    if (lastMorning !== dateStr) {
+      console.log('[Sync] Starting Morning Sync (Master Data)')
+      if (isSupabaseConfigured() && supabase) {
+        await syncCloudToLocal() // Future: optimize to pull only master data
+      }
+      localStorage.setItem('last_morning_sync', dateStr)
+      markSynced('scheduled_morning')
+    }
+  }
+  
+  // Evening Sync (6 PM - 10 PM)
+  if (hour >= 18 && hour < 22) {
+    const lastEvening = localStorage.getItem('last_evening_sync')
+    if (lastEvening !== dateStr) {
+      console.log('[Sync] Starting Evening Sync (Reports & Achievements)')
+      await trySyncQueue()
+      if (isSupabaseConfigured() && supabase) {
+        await syncCloudToLocal()
+      }
+      localStorage.setItem('last_evening_sync', dateStr)
+      markSynced('scheduled_evening')
+    }
   }
 }
 
@@ -141,7 +197,10 @@ export function startAutoSync(intervalMs = 30000) {
   if (navigator.onLine && getQueueCount() > 0) trySyncQueue()
 
   syncInterval = setInterval(() => {
-    if (navigator.onLine && getQueueCount() > 0) trySyncQueue()
+    if (navigator.onLine) {
+      if (getQueueCount() > 0) trySyncQueue()
+      checkScheduledSync()
+    }
   }, intervalMs)
 
   // Network events
