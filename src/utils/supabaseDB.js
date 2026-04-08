@@ -425,16 +425,24 @@ export async function refreshSync() {
 
 
 export async function authLogin(username, password) {
-  // ── Cloud login ────────────────────────────────────────────────────────────
+  const normalized = username.trim().toLowerCase().replace(/\s+/g, '_')
+
+  const cached = await local.authLogin(normalized, password)
+  if (cached.success) {
+    if (USE_CLOUD() && supabase) {
+      syncCloudToLocal(true).catch(() => {})
+    }
+    return cached
+  }
+
   if (USE_CLOUD() && supabase) {
     try {
-      const normalized = username.trim().toLowerCase().replace(/\s+/g, '_')
       const { data, error } = await supabase
         .from('users')
-        .select('*')
+        .select('id,username,password_hash,role,full_name,territory,email,phone,is_active')
         .eq('username', normalized)
         .eq('is_active', true)
-        .single()
+        .maybeSingle()
 
       if (error || !data) {
         return { success: false, message: 'Invalid username or password' }
@@ -445,7 +453,6 @@ export async function authLogin(username, password) {
         return { success: false, message: 'Invalid username or password' }
       }
 
-      // Sync all cloud data to local in background — optimized initial sync
       syncCloudToLocal(true).catch(() => {})
 
       return {
@@ -459,18 +466,15 @@ export async function authLogin(username, password) {
         phone:     data.phone || '',
         token:     generateToken(data),
       }
-
     } catch (e) {
-      // Network error — try local cache
       console.warn('[authLogin] Supabase error, trying cache:', e.message)
-      const cached = await local.authLogin(username, password)
-      if (cached.success) return cached
+      const retryCached = await local.authLogin(normalized, password)
+      if (retryCached.success) return retryCached
       return { success: false, message: 'Cannot connect. Check your internet and try again.' }
     }
   }
 
-  // ── Local-only mode ────────────────────────────────────────────────────────
-  return local.authLogin(username, password)
+  return local.authLogin(normalized, password)
 }
 
 // ---------------------------------------------------------
@@ -1358,3 +1362,4 @@ export function saveDailySalesReportSync(...args) { return local.saveDailySalesR
 export function createProductDayEntrySync(...args) { return local.createProductDayEntry(...args) }
 export function updateProductDayEntrySync(...args) { return local.updateProductDayEntry(...args) }
 export function deleteProductDayEntrySync(...args) { return local.deleteProductDayEntry(...args) }
+
