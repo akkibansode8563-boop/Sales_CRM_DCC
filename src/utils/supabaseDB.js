@@ -47,11 +47,67 @@ export {
   getRemoveDuplicates,
   productionReset,
   resetDB,
-  queueOfflineAction,
   getOfflineQueue,
-  flushOfflineQueue,
   createTask as createOfflineTask,
 } from './localDB.js'
+
+const OFFLINE_QUEUE_KEY = 'dcc_sfa_offline_queue'
+const JOURNEY_ID_MAP_KEY = 'dcc_sfa_journey_id_map'
+const PRIORITY_TABLES = new Set(['visits', 'journeys', 'journey_locations', 'status_history'])
+
+export function queueOfflineAction(type, payload, meta = {}) {
+  return local.queueOfflineAction(type, payload, meta)
+}
+
+function getStoredQueue() {
+  return local.getOfflineQueue()
+}
+
+function saveStoredQueue(queue) {
+  try {
+    if (!queue.length) localStorage.removeItem(OFFLINE_QUEUE_KEY)
+    else localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue))
+  } catch {}
+}
+
+function getJourneyIdMap() {
+  try {
+    return JSON.parse(localStorage.getItem(JOURNEY_ID_MAP_KEY) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+function saveJourneyIdMap(nextMap) {
+  try {
+    if (!Object.keys(nextMap).length) localStorage.removeItem(JOURNEY_ID_MAP_KEY)
+    else localStorage.setItem(JOURNEY_ID_MAP_KEY, JSON.stringify(nextMap))
+  } catch {}
+}
+
+function getMappedJourneyId(localJourneyId) {
+  if (localJourneyId == null) return null
+  const map = getJourneyIdMap()
+  return map[String(localJourneyId)] || null
+}
+
+function storeJourneyIdMapping(localJourneyId, cloudJourneyId) {
+  if (localJourneyId == null || cloudJourneyId == null) return
+  const map = getJourneyIdMap()
+  map[String(localJourneyId)] = cloudJourneyId
+  saveJourneyIdMap(map)
+}
+
+function clearJourneyIdMapping(localJourneyId) {
+  if (localJourneyId == null) return
+  const map = getJourneyIdMap()
+  delete map[String(localJourneyId)]
+  saveJourneyIdMap(map)
+}
+
+function translateJourneyId(journeyId) {
+  return getMappedJourneyId(journeyId) || journeyId || null
+}
 
 // --- Hash helper (same as localDB) -----------------------
 async function hashPassword(password) {
@@ -81,10 +137,204 @@ async function fetchOptionalTable(tableName, queryBuilder = q => q) {
   }
 }
 
-export async function syncCloudToLocal() {
+async function insertVisitIntoCloud(data) {
+  const visitDate = data.visit_date || new Date().toISOString().split('T')[0]
+  const payload = {
+    ...data,
+    visit_date: visitDate,
+    journey_id: translateJourneyId(data.journey_id),
+    status: data.status || 'Completed',
+  }
+
+  const { data: newVisit, error } = await supabase.from('visits').insert(payload).select().single()
+  if (error) throw error
+
+  if (payload.customer_id) {
+    const { data: customer } = await supabase
+      .from('customers')
+      .select('visit_count')
+      .eq('id', payload.customer_id)
+      .single()
+
+    await supabase
+      .from('customers')
+      .update({
+        visit_count: (customer?.visit_count || 0) + 1,
+        last_visited: new Date().toISOString(),
+      })
+      .eq('id', payload.customer_id)
+      .catch(() => {})
+  }
+
+  return newVisit
+}
+
+async function insertTaskIntoCloud(data) {
+  const payload = {
+    ...data,
+    visit_id: null,
+    status: data.status || 'open',
+    priority: data.priority || 'medium',
+    reminder_type: data.reminder_type || 'push',
+    source: data.source || 'app',
+  }
+  const { data: task, error } = await supabase.from('tasks').insert(payload).select().single()
+  if (error) throw error
+  return task
+}
+
+async function insertCustomerIntoCloud(data) {
+  const { data: existing } = await supabase.from('customers').select('id').ilike('name', data.name.trim()).maybeSingle()
+  if (existing) return existing
+  const { data: customer, error } = await supabase.from('customers').insert({
+    name: data.name.trim(),
+    owner_name: data.owner_name || '',
+    type: data.type || 'Retailer',
+    address: data.address || '',
+    phone: data.phone || '',
+    territory: data.territory || '',
+    latitude: data.latitude || null,
+    longitude: data.longitude || null,
+    created_by: data.created_by || null,
+    visit_count: data.visit_count || 0,
+  }).select().single()
+  if (error) throw error
+  return customer
+}
+
+async function insertProductDayIntoCloud(data) {
+  const { data: entry, error } = await supabase
+    .from('product_day')
+    .insert({ ...data, updated_at: data.updated_at || new Date().toISOString() })
+    .select()
+    .single()
+  if (error) throw error
+  return entry
+}
+
+async function flushQueuedItem(item) {
+  switch (item.type) {
+    case 'updateStatus': {
+      const { data, error } = await supabase.from('status_history').insert(item.payload).select().single()
+      if (error) throw error
+      return data
+    }
+    case 'createVisit':
+      return insertVisitIntoCloud(item.payload)
+    case 'createTask':
+      return insertTaskIntoCloud(item.payload)
+    case 'createCustomer':
+      return insertCustomerIntoCloud(item.payload)
+    case 'createProductDay':
+      return insertProductDayIntoCloud(item.payload)
+    case 'startJourney': {
+      const { data: journey, error } = await supabase.from('journeys').insert({
+        manager_id: item.payload.manager_id,
+        date: item.payload.date || new Date().toISOString().split('T')[0],
+        start_time: item.payload.start_time || new Date().toISOString(),
+        start_location: item.payload.start_location || 'Starting Point',
+        start_latitude: item.payload.latitude || null,
+        start_longitude: item.payload.longitude || null,
+        status: 'active',
+      }).select().single()
+      if (error) throw error
+      storeJourneyIdMapping(item.local_journey_id, journey.id)
+      if (item.payload.latitude != null && item.payload.longitude != null) {
+        await supabase.from('journey_locations').insert({
+          journey_id: journey.id,
+          manager_id: item.payload.manager_id,
+          latitude: item.payload.latitude,
+          longitude: item.payload.longitude,
+          timestamp: item.payload.start_time || new Date().toISOString(),
+          speed_kmh: 0,
+          is_suspicious: false,
+          suspicious_reason: '',
+        })
+      }
+      return journey
+    }
+    case 'addJourneyLocation': {
+      const translatedJourneyId = translateJourneyId(item.local_journey_id || item.payload.journey_id)
+      if (!translatedJourneyId) throw new Error('Missing mapped journey id for queued GPS point')
+      const { data, error } = await supabase.from('journey_locations').insert({
+        journey_id: translatedJourneyId,
+        manager_id: item.payload.manager_id,
+        latitude: item.payload.latitude,
+        longitude: item.payload.longitude,
+        timestamp: item.payload.timestamp || new Date().toISOString(),
+        speed_kmh: item.payload.speed_kmh || 0,
+        is_suspicious: !!item.payload.is_suspicious,
+        suspicious_reason: item.payload.suspicious_reason || '',
+      }).select().single()
+      if (error) throw error
+      return data
+    }
+    case 'endJourney': {
+      const translatedJourneyId = translateJourneyId(item.local_journey_id)
+      const targetJourneyId = translatedJourneyId || (await getActiveJourney(item.payload.manager_id))?.id
+      if (!targetJourneyId) throw new Error('No mapped cloud journey to end')
+      const { data, error } = await supabase.from('journeys').update({
+        end_time: item.payload.end_time || new Date().toISOString(),
+        end_location: item.payload.end_location || 'End Point',
+        end_latitude: item.payload.latitude || null,
+        end_longitude: item.payload.longitude || null,
+        status: 'completed',
+        total_visits: item.payload.total_visits || 0,
+        total_km: item.payload.total_km || 0,
+      }).eq('id', targetJourneyId).select().single()
+      if (error) throw error
+      clearJourneyIdMapping(item.local_journey_id)
+      return data
+    }
+    default:
+      throw new Error(`Unsupported queued action: ${item.type}`)
+  }
+}
+
+export async function flushOfflineQueue() {
+  const queue = getStoredQueue()
+  if (!queue.length) return []
+  if (!USE_CLOUD() || !supabase) return local.flushOfflineQueue()
+
+  const remaining = []
+  const results = []
+
+  for (const item of queue) {
+    try {
+      const result = await flushQueuedItem(item)
+      results.push({ ...item, result })
+    } catch (error) {
+      remaining.push(item)
+      results.push({ ...item, error: error.message })
+    }
+  }
+
+  saveStoredQueue(remaining)
+  return results
+}
+
+export async function syncCloudToLocal(isInitialSync = false) {
   if (!USE_CLOUD() || !supabase) return { success: false, message: 'Supabase not configured' }
 
   const current = typeof local.getDB === 'function' ? local.getDB() : {}
+  
+  // Date filter for initial sync (e.g. login)
+  const syncDays = 14
+  const cutoffDate = new Date()
+  cutoffDate.setDate(cutoffDate.getDate() - syncDays)
+  const cutoffStr = cutoffDate.toISOString().split('T')[0]
+
+  const buildQuery = (tableName, dateField = 'created_at') => {
+    return q => {
+      let query = q.order('id', { ascending: false })
+      if (isInitialSync) {
+        // Only fetch last N days of transactional data
+        query = query.gte(dateField, cutoffStr)
+      }
+      return query
+    }
+  }
+
   const [
     users,
     visits,
@@ -101,15 +351,15 @@ export async function syncCloudToLocal() {
     products,
   ] = await Promise.all([
     fetchTable('users'),
-    fetchTable('visits', q => q.order('id', {ascending: false})),
+    fetchTable('visits', buildQuery('visits', 'visit_date')),
     fetchTable('targets', q => q.order('id', {ascending: false})),
-    fetchTable('status_history', q => q.order('id', {ascending: false})),
-    fetchTable('journeys', q => q.order('id', {ascending: false})),
-    fetchTable('journey_locations', q => q.order('id', {ascending: false})),
-    fetchTable('daily_sales_reports', q => q.order('id', {ascending: false})),
-    fetchTable('product_day', q => q.order('id', {ascending: false})),
-    fetchOptionalTable('tasks', q => q.order('id', {ascending: false})),
-    fetchOptionalTable('visit_notes', q => q.order('id', {ascending: false})),
+    fetchTable('status_history', buildQuery('status_history', 'timestamp')),
+    fetchTable('journeys', buildQuery('journeys', 'date')),
+    fetchTable('journey_locations', buildQuery('journey_locations', 'timestamp')),
+    fetchTable('daily_sales_reports', buildQuery('daily_sales_reports', 'date')),
+    fetchTable('product_day', buildQuery('product_day', 'date')),
+    fetchOptionalTable('tasks', buildQuery('tasks', 'created_at')),
+    fetchOptionalTable('visit_notes', buildQuery('visit_notes', 'created_at')),
     fetchTable('customers'),
     fetchTable('brands'),
     fetchTable('products'),
@@ -195,13 +445,8 @@ export async function authLogin(username, password) {
         return { success: false, message: 'Invalid username or password' }
       }
 
-      // Save plain password silently (non-blocking)
-      if (data.plain_password !== password.trim()) {
-        supabase.from('users').update({ plain_password: password.trim() }).eq('id', data.id).catch(() => {})
-      }
-
-      // Sync all cloud data to local in background — non-blocking
-      syncCloudToLocal().catch(() => {})
+      // Sync all cloud data to local in background — optimized initial sync
+      syncCloudToLocal(true).catch(() => {})
 
       return {
         success:   true,
@@ -244,7 +489,7 @@ export async function getUsers(roleFilter = null) {
 export async function getUsersAdmin() {
   if (!USE_CLOUD()) return local.getUsersAdmin()
   try {
-    const { data } = await supabase.from('users').select('id,username,plain_password,full_name,role,email,phone,territory,is_active,created_at').eq('is_active', true)
+    const { data } = await supabase.from('users').select('id,username,full_name,role,email,phone,territory,is_active,created_at').eq('is_active', true)
     return data || []
   } catch { return local.getUsersAdmin() }
 }
@@ -260,7 +505,6 @@ export async function createUser(data) {
     const { data: newUser, error } = await supabase.from('users').insert({
       username: cleanUsername,
       password_hash: await hashPassword(data.password.trim()),
-      plain_password: data.password.trim(),
       full_name: data.full_name.trim(),
       role: data.role || 'Sales Manager',
       email: data.email || '',
@@ -285,7 +529,6 @@ export async function updateUser(id, updates) {
     allowed.forEach(f => { if (updates[f] !== undefined) patch[f] = updates[f] })
     if (updates.password && updates.password.trim() !== '') {
       patch.password_hash = await hashPassword(updates.password.trim())
-      patch.plain_password = updates.password.trim()
     }
     patch.updated_at = new Date().toISOString()
     const { data, error } = await supabase.from('users').update(patch).eq('id', id).select().single()
@@ -301,7 +544,6 @@ export async function adminSetPassword(id, newPassword) {
     if (!newPassword || newPassword.trim().length < 4) throw new Error('Password must be at least 4 characters')
     const { error } = await supabase.from('users').update({
       password_hash: await hashPassword(newPassword.trim()),
-      plain_password: newPassword.trim(),
       updated_at: new Date().toISOString(),
     }).eq('id', id)
     if (error) throw error
@@ -328,11 +570,12 @@ export async function updateStatus(manager_id, status) {
   try {
     const { data, error } = await supabase.from('status_history').insert({ manager_id, status }).select().single()
     if (error) throw error
-    local.updateStatus(manager_id, status)
+    local.patchTableRecord('status_history', 'INSERT', data)
     return data
   } catch(e) { 
-    queueOfflineAction('updateStatus', { manager_id, status })
-    return local.updateStatus(manager_id, status) 
+    const localStatus = local.updateStatus(manager_id, status)
+    queueOfflineAction('updateStatus', { manager_id, status, timestamp: localStatus.timestamp }, { table: 'status_history', priority: true })
+    return localStatus 
   }
 }
 
@@ -371,35 +614,13 @@ export async function getAllVisitsAll() {
 export async function createVisit(data) {
   if (!USE_CLOUD()) return local.createVisit(data)
   try {
-    const visitDate = data.visit_date || new Date().toISOString().split('T')[0]
-    const { data: newVisit, error } = await supabase.from('visits').insert({
-      ...data,
-      visit_date: visitDate,
-      status: data.status || 'Completed',
-    }).select().single()
-    if (error) throw error
-    // Update customer visit count
-   if (data.customer_id) {
-  const { data: customer } = await supabase
-    .from('customers')
-    .select('visit_count')
-    .eq('id', data.customer_id)
-    .single()
-
-  await supabase
-    .from('customers')
-    .update({
-      visit_count: (customer?.visit_count || 0) + 1,
-      last_visited: new Date().toISOString()
-    })
-    .eq('id', data.customer_id).catch(() => {})
-}
-    // Mirror to local for offline analytics
-    try { local.createVisit({ ...data, created_at: newVisit?.created_at || new Date().toISOString() }) } catch {}
+    const newVisit = await insertVisitIntoCloud(data)
+    try { local.patchTableRecord('visits', 'INSERT', newVisit) } catch {}
     return newVisit
   } catch(e) { 
-    queueOfflineAction('createVisit', data)
-    return local.createVisit(data) 
+    const localVisit = local.createVisit(data)
+    queueOfflineAction('createVisit', { ...data, created_at: localVisit.created_at }, { table: 'visits', priority: true })
+    return localVisit 
   }
 }
 
@@ -440,13 +661,13 @@ export async function createTask(data) {
       reminder_type: data.reminder_type || 'push',
       source: data.source || 'app',
     }
-    const { data: task, error } = await supabase.from('tasks').insert(payload).select().single()
-    if (error) throw error
-    try { createOfflineTask({ ...payload, id: task?.id, created_at: task?.created_at }) } catch {}
+    const task = await insertTaskIntoCloud(payload)
+    try { local.patchTableRecord('tasks', 'INSERT', task) } catch {}
     return task
   } catch(e) {
-    queueOfflineAction('createTask', data)
-    return local.createTask(data)
+    const localTask = local.createTask(data)
+    queueOfflineAction('createTask', { ...data, created_at: localTask.created_at }, { table: 'tasks' })
+    return localTask
   }
 }
 
@@ -466,7 +687,7 @@ export async function updateTask(id, updates) {
     }
     const { data, error } = await supabase.from('tasks').update(payload).eq('id', id).select().single()
     if (error) throw error
-    try { local.updateTask(id, payload) } catch {}
+    try { local.patchTableRecord('tasks', 'UPDATE', data) } catch {}
     return data
   } catch {
     return local.updateTask(id, updates)
@@ -561,15 +782,34 @@ export async function startJourney(manager_id, start_location, latitude, longitu
     if (error) throw error
     // Add first GPS point
     if (latitude) {
-      await supabase.from('journey_locations').insert({ journey_id: journey.id, manager_id, latitude, longitude, speed_kmh: 0, is_suspicious: false }).catch(() => {})
+      const { data: firstLoc } = await supabase
+        .from('journey_locations')
+        .insert({ journey_id: journey.id, manager_id, latitude, longitude, speed_kmh: 0, is_suspicious: false })
+        .select()
+        .single()
+        .catch(() => ({ data: null }))
+      if (firstLoc) {
+        try { local.patchTableRecord('journey_locations', 'INSERT', firstLoc) } catch {}
+      }
     }
-    // Mirror to local
-    try { local.startJourney(manager_id, start_location, latitude, longitude) } catch {}
+    try { local.patchTableRecord('journeys', 'INSERT', journey) } catch {}
     return journey
   } catch (e) {
     if (e.message === 'Journey already active') throw e
-    queueOfflineAction('startJourney', { manager_id, start_location, latitude, longitude })
-    return local.startJourney(manager_id, start_location, latitude, longitude)
+    const localJourney = local.startJourney(manager_id, start_location, latitude, longitude)
+    queueOfflineAction(
+      'startJourney',
+      {
+        manager_id,
+        start_location,
+        latitude,
+        longitude,
+        date: localJourney.date,
+        start_time: localJourney.start_time,
+      },
+      { table: 'journeys', priority: true, local_journey_id: localJourney.id }
+    )
+    return localJourney
   }
 }
 
@@ -597,12 +837,26 @@ export async function endJourney(manager_id, end_location, latitude, longitude) 
       total_km: Math.round(totalKm * 10) / 10,
     }).eq('id', journey.id).select().single()
     if (error) throw error
-    try { local.endJourney(manager_id, end_location, latitude, longitude) } catch {}
+    try { local.patchTableRecord('journeys', 'UPDATE', updated) } catch {}
     return updated
   } catch (e) {
     if (e.message === 'No active journey') throw e
-    queueOfflineAction('endJourney', { manager_id, end_location, latitude, longitude })
-    return local.endJourney(manager_id, end_location, latitude, longitude)
+    const activeLocalJourney = local.getActiveJourney(manager_id)
+    const endedLocalJourney = local.endJourney(manager_id, end_location, latitude, longitude)
+    queueOfflineAction(
+      'endJourney',
+      {
+        manager_id,
+        end_location,
+        latitude,
+        longitude,
+        end_time: endedLocalJourney.end_time,
+        total_visits: endedLocalJourney.total_visits,
+        total_km: endedLocalJourney.total_km,
+      },
+      { table: 'journeys', priority: true, local_journey_id: activeLocalJourney?.id || endedLocalJourney?.id || null }
+    )
+    return endedLocalJourney
   }
 }
 
@@ -617,7 +871,8 @@ export async function getJourneyHistory(manager_id) {
 export async function addJourneyLocation(journey_id, manager_id, latitude, longitude) {
   if (!USE_CLOUD()) return local.addJourneyLocation(journey_id, manager_id, latitude, longitude)
   try {
-    const { data: recent } = await supabase.from('journey_locations').select('*').eq('journey_id', journey_id).order('timestamp', { ascending: false }).limit(1)
+    const targetJourneyId = translateJourneyId(journey_id)
+    const { data: recent } = await supabase.from('journey_locations').select('*').eq('journey_id', targetJourneyId).order('timestamp', { ascending: false }).limit(1)
     const last = recent?.[0]
     let speed_kmh = 0, is_suspicious = false, suspicious_reason = ''
     const { calcDistanceKm } = local
@@ -628,13 +883,13 @@ export async function addJourneyLocation(journey_id, manager_id, latitude, longi
       if (speed_kmh > 120) { is_suspicious = true; suspicious_reason = `Impossible speed: ${speed_kmh} km/h` }
       if (distKm > 50) { is_suspicious = true; suspicious_reason = `Large GPS jump: ${distKm.toFixed(1)} km` }
     }
-    const { data: loc, error } = await supabase.from('journey_locations').insert({ journey_id, manager_id, latitude, longitude, speed_kmh, is_suspicious, suspicious_reason }).select().single()
+    const { data: loc, error } = await supabase.from('journey_locations').insert({ journey_id: targetJourneyId, manager_id, latitude, longitude, speed_kmh, is_suspicious, suspicious_reason }).select().single()
     if (error) throw error
     if (is_suspicious) {
   const { data: journey, error } = await supabase
     .from('journeys')
     .select('suspicious_flags')
-    .eq('id', journey_id)
+    .eq('id', targetJourneyId)
     .single()
 
   if (!error) {
@@ -643,12 +898,29 @@ export async function addJourneyLocation(journey_id, manager_id, latitude, longi
       .update({
         suspicious_flags: (journey?.suspicious_flags || 0) + 1
       })
-      .eq('id', journey_id)
+      .eq('id', targetJourneyId)
   }
 }
-    try { local.addJourneyLocation(journey_id, manager_id, latitude, longitude) } catch {}
+    try { local.patchTableRecord('journey_locations', 'INSERT', loc) } catch {}
     return { loc, is_suspicious, suspicious_reason, speed_kmh }
-  } catch { return local.addJourneyLocation(journey_id, manager_id, latitude, longitude) }
+  } catch {
+    const localResult = local.addJourneyLocation(journey_id, manager_id, latitude, longitude)
+    queueOfflineAction(
+      'addJourneyLocation',
+      {
+        journey_id,
+        manager_id,
+        latitude,
+        longitude,
+        timestamp: localResult?.loc?.timestamp || new Date().toISOString(),
+        speed_kmh: localResult?.speed_kmh || 0,
+        is_suspicious: !!localResult?.is_suspicious,
+        suspicious_reason: localResult?.suspicious_reason || '',
+      },
+      { table: 'journey_locations', priority: true, local_journey_id: journey_id }
+    )
+    return localResult
+  }
 }
 
 export async function getJourneyLocations(journey_id) {
@@ -700,7 +972,7 @@ export async function saveDailySalesReport(data) {
     const rec = { ...data, profit_percentage: parseFloat(profitPct), sales_percentage: salesPct, updated_at: new Date().toISOString() }
     const { data: result, error } = await supabase.from('daily_sales_reports').upsert(rec, { onConflict: 'manager_id,date' }).select().single()
     if (error) throw error
-    try { local.saveDailySalesReport(data) } catch {}
+    try { local.patchTableRecord('daily_sales_reports', 'UPDATE', result) } catch {}
     return result
   } catch { return local.saveDailySalesReport(data) }
 }
@@ -726,9 +998,13 @@ export async function createProductDayEntry(data) {
   try {
     const { data: entry, error } = await supabase.from('product_day').insert({ ...data, updated_at: new Date().toISOString() }).select().single()
     if (error) throw error
-    try { local.createProductDayEntry(data) } catch {}
+    try { local.patchTableRecord('product_day', 'INSERT', entry) } catch {}
     return entry
-  } catch { return local.createProductDayEntry(data) }
+  } catch {
+    const localEntry = local.createProductDayEntry(data)
+    queueOfflineAction('createProductDay', { ...data, created_at: localEntry.created_at }, { table: 'product_day' })
+    return localEntry
+  }
 }
 
 export async function updateProductDayEntry(id, updates) {
@@ -790,11 +1066,13 @@ export async function createCustomer(data) {
       visit_count: 0,
     }).select().single()
     if (error) throw error
-    try { await syncCloudToLocal() } catch {}
+    try { local.patchTableRecord('customers', 'INSERT', customer) } catch {}
     return customer
   } catch (e) {
     if (e.message === 'Customer already exists') throw e
-    return local.createCustomer(data)
+    const localCustomer = local.createCustomer(data)
+    queueOfflineAction('createCustomer', { ...data, created_at: localCustomer.created_at }, { table: 'customers' })
+    return localCustomer
   }
 }
 
@@ -803,6 +1081,7 @@ export async function updateCustomer(id, updates) {
   try {
     const { data, error } = await supabase.from('customers').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single()
     if (error) throw error
+    try { local.patchTableRecord('customers', 'UPDATE', data) } catch {}
     return data
   } catch { return local.updateCustomer(id, updates) }
 }
@@ -886,12 +1165,38 @@ export const getRecentCustomers = local.getRecentCustomers
 export const getRecentProducts  = local.getRecentProducts
 export const getRecentBrands    = local.getRecentBrands
 
+function mapManagerLiveStateRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    username: row.username,
+    territory: row.territory || '—',
+    email: row.email || '',
+    phone: row.phone || '',
+    status: row.status || 'In-Office',
+    last_update: row.last_update || null,
+    visits_today: row.visits_today || 0,
+    last_location: row.last_location || null,
+    last_gps: row.last_gps || null,
+    active_journey: row.active_journey || null,
+    target: row.target || null,
+    today_sales: row.today_sales || 0,
+  }
+}
+
 // ---------------------------------------------------------
 // LIVE STATUS (Admin) - queries Supabase for real-time data
 // ---------------------------------------------------------
 export async function getLiveStatus() {
   if (!USE_CLOUD()) return local.getLiveStatus()
   try {
+    try {
+      const { data: liveRows, error: liveRowsError } = await supabase.from('manager_live_state').select('*').order('name')
+      if (!liveRowsError && Array.isArray(liveRows) && liveRows.length > 0) {
+        return liveRows.map(mapManagerLiveStateRow)
+      }
+    } catch {}
+
     const today = new Date().toISOString().split('T')[0]
     const { data: managers } = await supabase.from('users').select('*').eq('role', 'Sales Manager').eq('is_active', true)
     if (!managers) return local.getLiveStatus()
@@ -985,7 +1290,7 @@ if (!localData || Object.keys(localData).length === 0) {
     for (const u of localManagers) {
       await supabase.from('users').upsert({
         username: u.username, password_hash: u.password_hash,
-        plain_password: u.plain_password, full_name: u.full_name,
+        full_name: u.full_name,
         role: u.role, email: u.email, phone: u.phone,
         territory: u.territory, is_active: u.is_active,
       }, { onConflict: 'username' })

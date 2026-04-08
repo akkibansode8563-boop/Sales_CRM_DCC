@@ -54,13 +54,16 @@ export async function trySyncQueue() {
       return { synced: 0, failed: 0, pending: 0 }
     }
     notify({ syncing: true, count: queue.length })
-    flushOfflineQueue()
+    const results = await flushOfflineQueue()
+    const failed = results.filter(item => item.error).length
+    const synced = results.length - failed
+    const pending = getQueueCount()
     if (isSupabaseConfigured() && supabase) {
       try { await syncCloudToLocal() } catch {}
     }
     lastSyncAt = new Date().toISOString()
-    notify({ syncing: false, synced: queue.length, count: 0, status: 'synced', lastSyncAt })
-    return { synced: queue.length, failed: 0, pending: 0 }
+    notify({ syncing: false, synced, count: pending, status: failed ? 'partial' : 'synced', lastSyncAt })
+    return { synced, failed, pending }
   } catch (e) {
     notify({ syncing: false, error: e.message, status: 'error' })
     return { synced: 0, failed: 1, pending: getQueueCount() }

@@ -8,10 +8,9 @@ import {
     getAnalytics, productionReset, getDailyAlerts, shouldShowAlerts, getAlertDismissKey,
     bulkCreateTargets, calcDistanceKm, calcTravelTime,
     getTerritoryStats, getAISuggestions,
-    subscribeToLiveUpdates, subscribeToLocalChanges, migrateLocalToSupabase,
+    subscribeToLocalChanges, migrateLocalToSupabase,
     exportToCSV, exportDailyReport,
     getLiveStatusSync      as getLiveStatus,
-    getLiveStatus          as getLiveStatusAsync,
     getUsersAdminSync      as getUsersAdmin,
     getAllVisitsSync        as getAllVisits,
     getDailyReportsSync    as getDailySalesReports,
@@ -96,7 +95,6 @@ export default function AdminDashboard() {
   const [userModal,       setUserModal]     = useState(false)
   const [targetModal,     setTargetModal]   = useState(false)
   const [editingUser,     setEditingUser]   = useState(null)
-  const [editCreds,       setEditCreds]     = useState({username:'',password:'',show:false})
   const [pwdEdit,         setPwdEdit]       = useState({})
   const [drillManager,    setDrillManager]  = useState(null)
   const [showReplay,      setShowReplay]    = useState(false)
@@ -274,46 +272,6 @@ export default function AdminDashboard() {
     }
   }, [reload])
 
-  // Real-time GPS polling: pull live manager GPS from cloud every 30s
-  // This is separate from reload() which uses localDB (no GPS data)
-  useEffect(() => {
-    if (!isSupabaseConfigured()) return
-    const pollLiveGPS = async () => {
-      try {
-        const live = await getLiveStatusAsync()
-        if (Array.isArray(live) && live.length > 0) {
-          setManagers(live)
-        }
-      } catch {}
-    }
-    // Poll immediately, then every 30 seconds
-    pollLiveGPS()
-    const interval = setInterval(pollLiveGPS, 30000)
-    return () => clearInterval(interval)
-  }, [])
-  useEffect(() => {
-    const unsub = subscribeToLiveUpdates((payload) => {
-      const table = payload?.table || ''
-      // Only reload everything for priority modules (Instant Sync)
-      const isPriority = ['visits', 'journeys', 'journey_locations', 'status_history'].includes(table)
-      
-      if (isPriority) {
-        setTimeout(reload, 300)
-        
-        // Specially for journey/GPS/status, force immediate GPS re-fetch
-        if (['journeys', 'journey_locations', 'status_history'].includes(table) && isSupabaseConfigured()) {
-          setTimeout(async () => {
-            try {
-              const live = await getLiveStatusAsync()
-              if (Array.isArray(live) && live.length > 0) setManagers(live)
-            } catch {}
-          }, 800)
-        }
-      }
-    })
-    return unsub
-  }, [reload])
-
   // Local mode: listen for product_day changes from manager dashboard (same browser, other tab)
   useEffect(() => {
     const unsub = subscribeToLocalChanges(() => { setTimeout(reload, 400) })
@@ -323,8 +281,7 @@ export default function AdminDashboard() {
   // Cloud mode: Supabase realtime subscription for instant sync
   useEffect(() => {
     const unsub = startRealtimeSync((payload) => { 
-      // This listener handles priority tables via syncService.js
-      setTimeout(reload, 300) 
+      setTimeout(reload, 180)
     })
     return unsub
   }, [reload])
@@ -337,7 +294,7 @@ export default function AdminDashboard() {
     const finalUf = { ...uf, username: cleanUsername, full_name: uf.full_name.trim() }
     try {
       if (editingUser) { await updateUser(editingUser.id, finalUf); toastMsg('User updated') }
-      else { await createUser(finalUf); toastMsg('User "' + cleanUsername + '" created! pwd: ' + uf.password.trim()) }
+      else { await createUser(finalUf); toastMsg('User "' + cleanUsername + '" created. Share the password directly with the user.') }
       setUserModal(false); setEditingUser(null); setUf(initUF); reload()
     } catch(e) { toastMsg(e.message, 'error') }
   }
@@ -352,7 +309,6 @@ export default function AdminDashboard() {
   }
   const openEditUser = u => {
     setEditingUser(u)
-    setEditCreds({username:u.username, password:u.plain_password||'', show:false})
     setUf({username:u.username,password:'',full_name:u.full_name,email:u.email||'',phone:u.phone||'',territory:u.territory||'',role:u.role,_showPwd:false})
     setUserModal(true)
   }
@@ -1665,28 +1621,17 @@ useEffect(() => {
             <div className="modal-body">
               {editingUser && (
                 <div style={{background:'#eff6ff',border:'2px solid #2563eb',borderRadius:'10px',padding:'14px',marginBottom:'16px'}}>
-                  <div style={{fontSize:'0.7rem',fontWeight:800,color:'#1d4ed8',letterSpacing:'0.08em',marginBottom:'10px'}}>CURRENT LOGIN CREDENTIALS</div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+                  <div style={{fontSize:'0.7rem',fontWeight:800,color:'#1d4ed8',letterSpacing:'0.08em',marginBottom:'10px'}}>ACCOUNT DETAILS</div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr',gap:'8px'}}>
                     <div>
                       <div style={{fontSize:'0.65rem',fontWeight:700,color:'#374151',marginBottom:'4px'}}>USERNAME</div>
                       <div style={{background:'#fff',border:'1px solid #93c5fd',borderRadius:'7px',padding:'7px 10px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'6px'}}>
-                        <code style={{fontSize:'0.88rem',color:'#1e3a8a',fontWeight:800,flex:1}}>{editCreds.username}</code>
-                        <button type="button" onClick={()=>{navigator.clipboard.writeText(editCreds.username);toastMsg('Copied!')}} style={{background:'none',border:'none',cursor:'pointer',fontSize:'1rem'}}>&#x1F4CB;</button>
+                        <code style={{fontSize:'0.88rem',color:'#1e3a8a',fontWeight:800,flex:1}}>{editingUser.username}</code>
+                        <button type="button" onClick={()=>{navigator.clipboard.writeText(editingUser.username);toastMsg('Copied!')}} style={{background:'none',border:'none',cursor:'pointer',fontSize:'1rem'}}>&#x1F4CB;</button>
                       </div>
                     </div>
-                    <div>
-                      <div style={{fontSize:'0.65rem',fontWeight:700,color:'#374151',marginBottom:'4px'}}>
-                        PASSWORD{!editCreds.password && <span style={{color:'#f59e0b'}}> not recorded</span>}
-                      </div>
-                      <div style={{background:'#fff',border:'1px solid #93c5fd',borderRadius:'7px',padding:'7px 10px',display:'flex',alignItems:'center',gap:'4px'}}>
-                        <code style={{fontSize:'0.88rem',color:editCreds.password?'#1e3a8a':'#9ca3af',fontWeight:800,flex:1}}>
-                          {editCreds.password ? (editCreds.show ? editCreds.password : '••••••') : 'login once to capture'}
-                        </code>
-                        {editCreds.password && <>
-                          <button type="button" onClick={()=>setEditCreds(p=>({...p,show:!p.show}))} style={{background:'none',border:'none',cursor:'pointer',fontSize:'1rem'}}>{editCreds.show ? '&#x1F648;' : '&#x1F441;'}</button>
-                          <button type="button" onClick={()=>{navigator.clipboard.writeText(editCreds.password);toastMsg('Password copied!')}} style={{background:'none',border:'none',cursor:'pointer',fontSize:'1rem'}}>&#x1F4CB;</button>
-                        </>}
-                      </div>
+                    <div style={{fontSize:'0.72rem',color:'#475569',lineHeight:1.5}}>
+                      Passwords are no longer stored or shown in the admin panel. Use the field below to reset a password when needed.
                     </div>
                   </div>
                 </div>

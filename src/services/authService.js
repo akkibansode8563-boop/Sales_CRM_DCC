@@ -1,4 +1,4 @@
-import { authLogin } from '../utils/localDB'
+import { authLogin } from '../utils/supabaseDB'
 
 /* --- Auth Service ----------------------------
    JWT-like session management with localStorage

@@ -44,7 +44,7 @@ import ProformaInvoice  from '../components/ProformaInvoice'
 import JourneyStartModal from '../components/JourneyStartModal'
 import dccLogo from '../assets/dcc-logo.png'
 import { createVisitDraft, validateVisitDraft } from '../utils/visitRequirements'
-import { startRealtimeSync, onSyncStatusChange, getQueueCount, forceSyncNow, getLastSyncAt } from '../services/syncService'
+import { startRealtimeSync, onSyncStatusChange, getQueueCount, forceSyncNow, getLastSyncAt, flushPriorityData } from '../services/syncService'
 import { getCurrentPosition, getLocationFallback, reverseGeocodeCached } from '../utils/location'
 import './ManagerDashboard.css'
 
@@ -690,6 +690,7 @@ export default function ManagerDashboard() {
   /* -- Status -- */
   const changeStatus = async s => {
     await updateStatus(user.id, s)
+    await flushPriorityData().catch(() => {})
     setStatus(s)
     setShowStatusPicker(false)
     toastMsg(`Status → ${s}`)
@@ -770,6 +771,7 @@ export default function ManagerDashboard() {
       // The selected mode just describes the type of activity
       const statusToSet = mode === 'On Field' ? 'On Field' : 'On Field'
       await changeStatus(statusToSet)
+      await flushPriorityData().catch(() => {})
       toastMsg(`Journey started! 🚀 Status: On Field`)
       setShowMap(true)
       if (gpsCoords) {
@@ -804,6 +806,7 @@ export default function ManagerDashboard() {
     const loc = c ? getLocationFallback(c.latitude, c.longitude) : 'End Point'
     try {
       const j = await endJourney(user.id,loc,c?.latitude,c?.longitude)
+      await flushPriorityData().catch(() => {})
       setJourney(null); await changeStatus('In-Office'); reload()
       toastMsg(`Journey done · ${j.total_visits} stops · ${j.total_km} km 🎯`)
     } catch(e) { toastMsg(e.message,'error') }
@@ -818,6 +821,7 @@ export default function ManagerDashboard() {
       const visit = await createVisit({
         manager_id:user.id,
         visit_date:today,
+        journey_id: journey?.id || null,
         customer_id:customerId,
         client_name:data.client_name,
         customer_name:data.client_name,
@@ -831,6 +835,7 @@ export default function ManagerDashboard() {
         photo:data.photo,
         voice_note:data.voice_note || null,
       })
+      await flushPriorityData().catch(() => {})
       reloadVisits(); toastMsg(`Stop #${todayVisits.length+1} logged ✅`)
     } catch (error) {
       toastMsg(error.message || 'Unable to log visit', 'error')
@@ -870,6 +875,7 @@ export default function ManagerDashboard() {
       const visit = await createVisit({
         manager_id: user.id, 
         visit_date: today,
+        journey_id: journey?.id || null,
         customer_id: customerId, 
         client_name: vf.customer_name,
         customer_name: vf.customer_name, 
@@ -890,6 +896,7 @@ export default function ManagerDashboard() {
         distance_from_prev: distFromPrev,
         km_covered: totalKmCurrent,
       })
+      await flushPriorityData().catch(() => {})
 
       if (vf.follow_up_date) {
         await createTask({

@@ -20,7 +20,6 @@ create table if not exists public.users (
   id             bigserial primary key,
   username       text unique not null,
   password_hash  text not null,
-  plain_password text,
   full_name      text not null,
   role           text not null default 'Sales Manager',
   email          text default '',
@@ -34,6 +33,7 @@ create table if not exists public.users (
   last_login_at  timestamptz,
   login_count    integer default 0
 );
+alter table public.users drop column if exists plain_password;
 create index if not exists idx_users_role       on public.users(role);
 create index if not exists idx_users_territory  on public.users(territory);
 create index if not exists idx_users_active     on public.users(is_active);
@@ -637,10 +637,115 @@ left join (
 where c.deleted_at is null;
 
 -- ═══════════════════════════════════════════════════════════
+-- LIVE MANAGER STATE (single-source admin dashboard view)
+-- ═══════════════════════════════════════════════════════════
+create or replace view public.manager_live_state as
+select
+  u.id,
+  u.full_name as name,
+  u.username,
+  coalesce(nullif(u.territory, ''), '—') as territory,
+  coalesce(u.email, '') as email,
+  coalesce(u.phone, '') as phone,
+  coalesce(curr.status, 'In-Office') as status,
+  curr.timestamp as last_update,
+  coalesce(vcount.visits_today, 0) as visits_today,
+  case
+    when last_visit.id is null then null
+    else jsonb_build_object(
+      'name', last_visit.location,
+      'lat', last_visit.latitude,
+      'lng', last_visit.longitude,
+      'time', last_visit.created_at,
+      'customer_name', coalesce(last_visit.client_name, last_visit.customer_name, ''),
+      'visit_number', coalesce(vcount.visits_today, 0)
+    )
+  end as last_location,
+  case
+    when gps.id is null then null
+    else jsonb_build_object(
+      'lat', gps.latitude,
+      'lng', gps.longitude,
+      'time', gps.timestamp,
+      'speed', gps.speed_kmh
+    )
+  end as last_gps,
+  case
+    when active_journey.id is null then null
+    else jsonb_build_object(
+      'id', active_journey.id,
+      'started_at', active_journey.start_time,
+      'visit_count', coalesce(vcount.visits_today, 0),
+      'suspicious_flags', coalesce(active_journey.suspicious_flags, 0)
+    )
+  end as active_journey,
+  case
+    when latest_target.id is null then null
+    else jsonb_build_object(
+      'id', latest_target.id,
+      'manager_id', latest_target.manager_id,
+      'visit_target', latest_target.visit_target,
+      'sales_target', latest_target.sales_target,
+      'month', latest_target.month,
+      'year', latest_target.year
+    )
+  end as target,
+  coalesce(today_report.sales_achievement, 0) as today_sales
+from public.users u
+left join lateral (
+  select sh.status, sh.timestamp
+  from public.status_history sh
+  where sh.manager_id = u.id
+  order by sh.timestamp desc
+  limit 1
+) curr on true
+left join lateral (
+  select count(*)::integer as visits_today
+  from public.visits v
+  where v.manager_id = u.id and v.visit_date = current_date
+) vcount on true
+left join lateral (
+  select v.id, v.location, v.latitude, v.longitude, v.created_at, v.client_name, v.customer_name
+  from public.visits v
+  where v.manager_id = u.id and v.visit_date = current_date
+  order by v.created_at desc
+  limit 1
+) last_visit on true
+left join lateral (
+  select j.id, j.start_time, j.suspicious_flags
+  from public.journeys j
+  where j.manager_id = u.id and j.status = 'active'
+  order by j.start_time desc
+  limit 1
+) active_journey on true
+left join lateral (
+  select jl.id, jl.latitude, jl.longitude, jl.timestamp, jl.speed_kmh
+  from public.journey_locations jl
+  where jl.journey_id = active_journey.id
+  order by jl.timestamp desc
+  limit 1
+) gps on true
+left join lateral (
+  select t.*
+  from public.targets t
+  where t.manager_id = u.id
+  order by t.year desc, t.month desc
+  limit 1
+) latest_target on true
+left join lateral (
+  select dsr.sales_achievement
+  from public.daily_sales_reports dsr
+  where dsr.manager_id = u.id and dsr.date = current_date
+  limit 1
+) today_report on true
+where u.role = 'Sales Manager'
+  and coalesce(u.is_active, true) = true;
+
+-- ═══════════════════════════════════════════════════════════
 -- SEED DATA
 -- ═══════════════════════════════════════════════════════════
-insert into public.users (id, username, password_hash, plain_password, full_name, role, email, is_active)
-values (1, 'admin', 'e86f78a8a3caf0b60d8e74e5942aa6d86dc150cd3c03338aef25b7d2d7e3acc7', 'Admin@123', 'System Administrator', 'Admin', 'admin@dcc.com', true)
+insert into public.users (id, username, password_hash, full_name, role, email, is_active)
+values (1, 'admin', 'e86f78a8a3caf0b60d8e74e5942aa6d86dc150cd3c03338aef25b7d2d7e3acc7', 'System Administrator', 'Admin', 'admin@dcc.com', true)
 on conflict (username) do nothing;
 
 insert into public.brands (name) values ('Brand Alpha'), ('Brand Beta'), ('Brand Gamma')
