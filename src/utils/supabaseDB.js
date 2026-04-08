@@ -504,7 +504,12 @@ export async function createUser(data) {
     const cleanUsername = data.username.trim().toLowerCase().replace(/\s+/g, '_')
     if (!cleanUsername) throw new Error('Username is required')
     if (!data.password || data.password.trim().length < 4) throw new Error('Password must be at least 4 characters')
-    const { data: existing } = await supabase.from('users').select('id').eq('username', cleanUsername).single()
+    const { data: existing, error: existingError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('username', cleanUsername)
+      .maybeSingle()
+    if (existingError) throw existingError
     if (existing) throw new Error(`Username "${cleanUsername}" already exists`)
     const { data: newUser, error } = await supabase.from('users').insert({
       username: cleanUsername,
@@ -517,7 +522,7 @@ export async function createUser(data) {
       is_active: true,
     }).select().single()
     if (error) throw error
-    try { await syncCloudToLocal() } catch {}
+    try { local.patchTableRecord('users', 'INSERT', newUser) } catch {}
     return { success: true, user_id: newUser.id, username: cleanUsername }
   } catch (e) {
     if (e.message.includes('already exists')) throw e

@@ -1648,7 +1648,7 @@ useEffect(() => {
                 <label>{editingUser ? 'Change Password (blank = keep current)' : 'Password *'}</label>
                 <div style={{position:'relative',display:'flex',alignItems:'center'}}>
                   <input type={uf._showPwd?'text':'password'} value={uf.password} onChange={e=>setUf(p=>({...p,password:e.target.value}))} placeholder={editingUser?'Type to change password...':'Min. 4 characters'} style={{width:'100%',paddingRight:'40px'}}/>
-                  <button type="button" onClick={()=>setUf(p=>({...p,_showPwd:!p._showPwd}))} style={{position:'absolute',right:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'1rem'}} tabIndex={-1}>{uf._showPwd ? '&#x1F648;' : '&#x1F441;'}</button>
+                  <button type="button" onClick={()=>setUf(p=>({...p,_showPwd:!p._showPwd}))} style={{position:'absolute',right:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'1rem'}} tabIndex={-1}>{uf._showPwd ? '🙈' : '👁'}</button>
                 </div>
               </div>
               <div className="row-2">
