@@ -64,9 +64,6 @@ const INTERACTION_COLORS = {
   'Other': { color:'#6B7280', bg:'#F9FAFB', icon:'📍' },
 }
 const AVATAR_COLORS = ['#2563EB','#10B981','#F59E0B','#EF4444','#7C3AED','#EC4899','#06B6D4','#F97316','#8B5CF6','#84CC16']
-// ── Realtime subscriptions (unchanged from v2) ──────────────
-const PRIORITY_TABLES = ['visits', 'journeys', 'journey_locations', 'status_history', 'rule_alerts', 'gps_anomalies']
-const SCHEDULED_TABLES = ['users', 'brands', 'products', 'daily_sales_reports', 'product_day', 'customers', 'targets', 'tasks']
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 const fmt          = v => v ? '\u20B9' + Number(v).toLocaleString('en-IN') : '\u20B90'
@@ -152,8 +149,20 @@ export default function AdminDashboard() {
     try { setOfflineCount(getQueueCount() || 0) } catch(e) { setOfflineCount(0) }
   }, [])
 
+  const loadAlerts = useCallback(() => {
+    if (shouldShowAlerts()) {
+      const dismissed = localStorage.getItem(getAlertDismissKey())
+      setAlertsDismissed(!!dismissed)
+      setAlerts(getDailyAlerts())
+    } else { setAlerts([]) }
+  }, [])
+
   useEffect(() => {
-    startAutoSync(30000)
+    // 1. Initial Load
+    reload()
+    loadAlerts()
+    
+    // 2. Background Sync Status
     const unsubStatus = onSyncStatusChange(s => {
       let status = s.status || 'idle'
       if (s.status === 'scheduled_morning') status = 'Morning Sync'
@@ -165,28 +174,31 @@ export default function AdminDashboard() {
       if (s.lastSyncAt) setLastSyncAt(s.lastSyncAt)
     })
 
-    // Enable Postgres CDC (Realtime) for immediate reflection
-    import('../services/syncService').then(({ startRealtimeSync }) => {
-      const unsubRealtime = startRealtimeSync((payload) => {
-        // Instant data refresh
-        reload()
-        
-        // Immediate Alert/Anomaly refresh
-        if (['rule_alerts', 'gps_anomalies'].includes(payload.table)) {
-          loadAlerts()
-          if (payload.new?.severity === 'critical') {
-             toastMsg(`New Critical Alert: ${payload.new.message}`, 'error')
-             // Optional: navigator.vibrate([100, 50, 100])
-          }
+    // 3. Auto-sync fallback (30s)
+    const stopSync = startAutoSync(30000)
+
+    // 4. Realtime CDC stream (Instant reflection)
+    const unsubRealtime = startRealtimeSync((payload) => {
+      reload()
+      if (['rule_alerts', 'gps_anomalies'].includes(payload.table)) {
+        loadAlerts()
+        if (payload.new?.severity === 'critical') {
+           toastMsg(`New Critical Alert: ${payload.new.message}`, 'error')
         }
-      })
-      return () => {
-        unsubStatus()
-        unsubRealtime()
       }
     })
 
-    return unsubStatus
+    // 5. Cloud Refresh (First mount)
+    if (typeof refreshSync === 'function') {
+      refreshSync().then(() => reload()).catch(() => {})
+    }
+
+    return () => {
+      unsubStatus()
+      unsubRealtime()
+      if (typeof stopSync === 'function') stopSync()
+      else stopAutoSync()
+    }
   }, [reload, loadAlerts])
 
   const syncNow = async () => {
@@ -210,18 +222,12 @@ export default function AdminDashboard() {
     loadAnalytics(analyticsPeriod, analyticsDate, analyticsMgrId, customStartDate, customEndDate) 
   }, [analyticsPeriod, analyticsDate, analyticsMgrId, customStartDate, customEndDate, loadAnalytics])
 
+  // Unified loadAlerts timer handled in main useEffect above
+  // This separate one is for the 5-minute background refresh regardless of realtime
   useEffect(() => {
-    const loadAlerts = () => {
-      if (shouldShowAlerts()) {
-        const dismissed = localStorage.getItem(getAlertDismissKey())
-        setAlertsDismissed(!!dismissed)
-        setAlerts(getDailyAlerts())
-      } else { setAlerts([]) }
-    }
-    loadAlerts()
     const interval = setInterval(loadAlerts, 5 * 60 * 1000)
     return () => clearInterval(interval)
-  }, [])
+  }, [loadAlerts])
 
   const doProductionReset = () => {
     if (!window.confirm('PRODUCTION RESET: Delete ALL managers, visits, journeys. Keep Admin only.')) return
@@ -288,28 +294,7 @@ export default function AdminDashboard() {
     }
   }, [sidebarOpen, userModal, targetModal, showReplay, alertsOpen, tab])
 
-  useEffect(() => {
-    // Instant render from local cache
-    reload()
-    // Background cloud sync — fires after first render
-    if (typeof refreshSync === 'function') {
-      refreshSync().then(() => reload()).catch(() => {})
-    }
-  }, [reload])
-
-  // Local mode: listen for product_day changes from manager dashboard (same browser, other tab)
-  useEffect(() => {
-    const unsub = subscribeToLocalChanges(() => { setTimeout(reload, 400) })
-    return unsub
-  }, [reload])
-
-  // Cloud mode: Supabase realtime subscription for instant sync
-  useEffect(() => {
-    const unsub = startRealtimeSync((payload) => { 
-      setTimeout(reload, 180)
-    })
-    return unsub
-  }, [reload])
+  // Cleaned up redundant sync logic (now handled in single unified effect above)
 
   const doCreateUser = async () => {
     const cleanUsername = uf.username.trim().toLowerCase().replace(/\s+/g, '_')
