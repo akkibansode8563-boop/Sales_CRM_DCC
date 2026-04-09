@@ -189,13 +189,14 @@ export function getToken() {
   return getSession()?.token || null
 }
 
-// ── User Management (Proxies to Supabase for now) ───────────
+// ── User Management & Status (Proxies to Supabase for now) ──
 import { 
   getUsers as dbGetUsers, 
   createUser as dbCreateUser, 
   updateUser as dbUpdateUser, 
   deleteUser as dbDeleteUser, 
-  adminSetPassword as dbAdminSetPassword 
+  adminSetPassword as dbAdminSetPassword,
+  updateStatus as dbUpdateStatus
 } from '../utils/supabaseDB'
 
 export const getUsers = dbGetUsers
@@ -203,3 +204,4 @@ export const createUser = dbCreateUser
 export const updateUser = dbUpdateUser
 export const deleteUser = dbDeleteUser
 export const adminSetPassword = dbAdminSetPassword
+export const updateStatus = dbUpdateStatus
