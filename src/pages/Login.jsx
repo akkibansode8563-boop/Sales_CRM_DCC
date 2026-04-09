@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/authStore'
-import { authLogin } from '../utils/supabaseDB'
+import { login as serviceLogin } from '../services/authService'
 import { isSupabaseConfigured } from '../utils/supabaseClient'
 import { logLoginEvent } from '../services/syncService'
 import dccLogo from '../assets/dcc-logo.png'
@@ -26,20 +26,12 @@ export default function Login() {
     e.preventDefault()
     setError(''); setLoading(true)
     try {
-      const r = await authLogin(form.username, form.password)
+      const r = await serviceLogin(form.username, form.password)
       if (r.success) {
-        login({
-          id: r.user_id,
-          username: r.username,
-          role: r.role,
-          full_name: r.full_name,
-          territory: r.territory || '',
-          email: r.email || '',
-          phone: r.phone || '',
-        }, r.token)
+        login(r.user, r.token)
         // Audit log — fire and forget
-        logLoginEvent(r.user_id, r.username, r.role, 'login').catch(() => {})
-        navigate(r.role === 'Admin' ? '/admin' : '/manager')
+        logLoginEvent(r.user.id, r.user.username, r.user.role, 'login').catch(() => {})
+        navigate(r.user.role === 'Admin' ? '/admin' : '/manager')
       } else {
         logLoginEvent(null, form.username, null, 'failed').catch(() => {})
         setError(r.message || 'Invalid credentials')

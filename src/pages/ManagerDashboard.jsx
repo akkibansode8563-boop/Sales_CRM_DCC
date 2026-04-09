@@ -7,7 +7,6 @@ import {
     searchBrands,    getRecentBrands,
     searchProducts,  getRecentProducts,
     getAISuggestions, detectNearbyCustomers, getOfflineQueue, flushOfflineQueue,
-    addJourneyLocation,
     getAllVisitsSync        as getAllVisits,
     getDailyReportsSync    as getDailySalesReports,
     getProductEntriesSync  as getProductDayEntries,
@@ -17,12 +16,8 @@ import {
     getTodayVisitsSync     as getTodayVisits,
     getCustomersSync       as getCustomers,
     getTasksSync           as getTasks,
-    updateStatus,
-    createVisit,
     createTask,
     updateTask,
-    startJourney,
-    endJourney,
     saveDailySalesReport,
     createProductDayEntry,
     updateProductDayEntry,
@@ -34,6 +29,9 @@ import {
     getCurrentStatus,
     refreshSync,
 } from '../utils/supabaseDB'
+import { startJourney, endJourney, logGPSPoint } from '../services/journeyService'
+import { createVisit } from '../services/visitService'
+import { updateStatus } from '../services/authService'
 import JourneyMap from '../components/JourneyMap'
 import AutocompleteInput, {
   QuickAddCustomerModal, QuickAddBrandModal, QuickAddProductModal
@@ -463,7 +461,7 @@ export default function ManagerDashboard() {
         if (dlat < 0.0001 && dlng < 0.0001) return
       }
       lastLat = lat; lastLng = lng
-      try { addJourneyLocation(journey.id, user.id, lat, lng) } catch(e) {}
+      try { logGPSPoint(journey.id, user.id, lat, lng) } catch(e) {}
     }
 
     const startTracking = async () => {

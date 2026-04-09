@@ -4,7 +4,6 @@ import useAuthStore from '../store/authStore'
 import dccLogo from '../assets/dcc-logo.png'
 import dccLogoWhite from '../assets/dcc-logo-white.png'
 import {
-    getUsers, createUser, updateUser, deleteUser, adminSetPassword,
     getAnalytics, productionReset, getDailyAlerts, shouldShowAlerts, getAlertDismissKey,
     bulkCreateTargets, calcDistanceKm, calcTravelTime,
     getTerritoryStats, getAISuggestions,
@@ -23,6 +22,7 @@ import {
     getTasksSync,
     refreshSync,
 } from '../utils/supabaseDB'
+import { getUsers, createUser, updateUser, deleteUser, adminSetPassword } from '../services/authService'
 import { lazy, Suspense } from 'react'
 import { getStorageMode, isSupabaseConfigured } from '../utils/supabaseClient'
 import { downloadPDFReport, downloadCSVReport } from '../utils/reportGenerator'
