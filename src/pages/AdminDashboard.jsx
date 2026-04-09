@@ -64,6 +64,9 @@ const INTERACTION_COLORS = {
   'Other': { color:'#6B7280', bg:'#F9FAFB', icon:'📍' },
 }
 const AVATAR_COLORS = ['#2563EB','#10B981','#F59E0B','#EF4444','#7C3AED','#EC4899','#06B6D4','#F97316','#8B5CF6','#84CC16']
+// ── Realtime subscriptions (unchanged from v2) ──────────────
+const PRIORITY_TABLES = ['visits', 'journeys', 'journey_locations', 'status_history', 'rule_alerts', 'gps_anomalies']
+const SCHEDULED_TABLES = ['users', 'brands', 'products', 'daily_sales_reports', 'product_day', 'customers', 'targets', 'tasks']
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 const fmt          = v => v ? '\u20B9' + Number(v).toLocaleString('en-IN') : '\u20B90'
@@ -151,7 +154,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     startAutoSync(30000)
-    const unsub = onSyncStatusChange(s => {
+    const unsubStatus = onSyncStatusChange(s => {
       let status = s.status || 'idle'
       if (s.status === 'scheduled_morning') status = 'Morning Sync'
       if (s.status === 'scheduled_evening') status = 'Evening Sync'
@@ -161,8 +164,30 @@ export default function AdminDashboard() {
       setOfflineCount(s.count || 0)
       if (s.lastSyncAt) setLastSyncAt(s.lastSyncAt)
     })
-    return unsub
-  }, [])
+
+    // Enable Postgres CDC (Realtime) for immediate reflection
+    import('../services/syncService').then(({ startRealtimeSync }) => {
+      const unsubRealtime = startRealtimeSync((payload) => {
+        // Instant data refresh
+        reload()
+        
+        // Immediate Alert/Anomaly refresh
+        if (['rule_alerts', 'gps_anomalies'].includes(payload.table)) {
+          loadAlerts()
+          if (payload.new?.severity === 'critical') {
+             toastMsg(`New Critical Alert: ${payload.new.message}`, 'error')
+             // Optional: navigator.vibrate([100, 50, 100])
+          }
+        }
+      })
+      return () => {
+        unsubStatus()
+        unsubRealtime()
+      }
+    })
+
+    return unsubStatus
+  }, [reload, loadAlerts])
 
   const syncNow = async () => {
     setManualSyncing(true)
